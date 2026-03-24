@@ -6,9 +6,11 @@ export default defineConfig({
   plugins: [react()],
   build: {
     lib: {
-      entry: resolve(__dirname, "src/index.ts"),
-      name: "GeoglowsAuth",
-      fileName: "index",
+      entry: {
+        index: resolve(__dirname, "src/index.ts"),
+        core: resolve(__dirname, "src/core/index.ts"),
+        react: resolve(__dirname, "src/react/index.ts"),
+      },
       formats: ["es", "cjs"],
     },
     rollupOptions: {
