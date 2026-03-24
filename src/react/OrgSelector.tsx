@@ -1,4 +1,3 @@
-import React from "react";
 import { useOrg } from "./AuthProvider";
 
 export function OrgSelector() {
