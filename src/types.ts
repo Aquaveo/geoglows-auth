@@ -43,7 +43,7 @@ export interface AuthAdapter {
   getCurrentUser(): Promise<AuthUser | null>;
   signInRedirect(): Promise<void>;
   signOutRedirect(): Promise<void>;
-  setupTokenRenewal?(): void;
+  setupTokenRenewal(): void;
 }
 
 export interface OidcConfig {
