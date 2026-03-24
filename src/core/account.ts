@@ -16,6 +16,52 @@ export interface AccountSummary {
   activeRole: "admin" | "viewer" | null;
 }
 
+function mapMembershipRow(row: any): OrgMembership {
+  return {
+    id: row.id,
+    org_id: row.org_id,
+    user_id: row.user_id,
+    role: row.role,
+    invited_at: row.invited_at,
+    accepted_at: row.accepted_at,
+    organization: Array.isArray(row.organizations)
+      ? row.organizations[0] ?? null
+      : row.organizations ?? null,
+  } as OrgMembership;
+}
+
+function dedupeOrganizations(memberships: OrgMembership[]): Organization[] {
+  const seen = new Set<string>();
+  const organizations: Organization[] = [];
+
+  for (const membership of memberships) {
+    const org = membership.organization;
+    if (!org?.id || seen.has(org.id)) continue;
+    seen.add(org.id);
+    organizations.push(org);
+  }
+
+  return organizations;
+}
+
+function resolveActiveOrgId(
+  organizations: Organization[],
+  preferredOrgId: string | null = getActiveOrgId()
+): string | null {
+  if (organizations.length === 0) {
+    setActiveOrgId(null);
+    return null;
+  }
+
+  if (preferredOrgId && organizations.some((org) => org.id === preferredOrgId)) {
+    return preferredOrgId;
+  }
+
+  const fallbackOrgId = organizations[0].id;
+  setActiveOrgId(fallbackOrgId);
+  return fallbackOrgId;
+}
+
 export async function loadAccountSummary(
   supabase: GeoglowsSupabaseClient,
   userId: string
@@ -48,33 +94,12 @@ export async function loadAccountSummary(
   if (profileError) throw profileError;
   if (membershipsError) throw membershipsError;
 
-  const memberships = (data ?? []).map((row: any) => ({
-    id: row.id,
-    org_id: row.org_id,
-    user_id: row.user_id,
-    role: row.role,
-    invited_at: row.invited_at,
-    accepted_at: row.accepted_at,
-    organization: Array.isArray(row.organizations)
-      ? row.organizations[0] ?? null
-      : row.organizations ?? null,
-  })) as OrgMembership[];
-
-  const organizations = memberships
-    .map((m) => m.organization)
-    .filter(Boolean) as Organization[];
-
-  let activeOrgId = getActiveOrgId();
-  if (!activeOrgId && organizations.length > 0) {
-    activeOrgId = organizations[0].id;
-    setActiveOrgId(activeOrgId);
-  }
-
-  const activeOrg =
-    organizations.find((org) => org.id === activeOrgId) ?? null;
-
+  const memberships = (data ?? []).map(mapMembershipRow);
+  const organizations = dedupeOrganizations(memberships);
+  const activeOrgId = resolveActiveOrgId(organizations);
+  const activeOrg = organizations.find((org) => org.id === activeOrgId) ?? null;
   const activeRole =
-    memberships.find((m) => m.org_id === activeOrgId)?.role ?? null;
+    memberships.find((membership) => membership.org_id === activeOrgId)?.role ?? null;
 
   return {
     profile: (profile as Profile | null) ?? null,
@@ -111,6 +136,23 @@ export async function createOrganization(
   return org as Organization;
 }
 
+export async function selectActiveOrg(
+  orgId: string | null,
+  organizations?: Organization[]
+): Promise<string | null> {
+  if (!orgId) {
+    setActiveOrgId(null);
+    return null;
+  }
+
+  if (organizations?.length && !organizations.some((org) => org.id === orgId)) {
+    throw new Error("Selected organization is not available to this user");
+  }
+
+  setActiveOrgId(orgId);
+  return orgId;
+}
+
 export function getActiveOrgId(): string | null {
   return localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
 }
@@ -118,4 +160,8 @@ export function getActiveOrgId(): string | null {
 export function setActiveOrgId(orgId: string | null) {
   if (orgId) localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, orgId);
   else localStorage.removeItem(ACTIVE_ORG_STORAGE_KEY);
+}
+
+export function clearActiveOrgId() {
+  localStorage.removeItem(ACTIVE_ORG_STORAGE_KEY);
 }

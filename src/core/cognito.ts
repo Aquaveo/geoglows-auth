@@ -15,6 +15,11 @@ function mapUser(user: any): AuthUser | null {
   };
 }
 
+function stripAuthParamsFromUrl() {
+  const cleanUrl = `${window.location.origin}${window.location.pathname}${window.location.hash}`;
+  window.history.replaceState({}, document.title, cleanUrl);
+}
+
 export function createOidcAuthAdapter(config: OidcConfig): AuthAdapter {
   const userManager = new UserManager({
     authority: config.authority,
@@ -29,6 +34,7 @@ export function createOidcAuthAdapter(config: OidcConfig): AuthAdapter {
   });
 
   let renewalInFlight: Promise<AuthUser | null> | null = null;
+  let renewalListenersBound = false;
 
   async function renewTokens(): Promise<AuthUser | null> {
     if (renewalInFlight) return renewalInFlight;
@@ -39,7 +45,11 @@ export function createOidcAuthAdapter(config: OidcConfig): AuthAdapter {
         return mapUser(renewed);
       } catch (error) {
         console.error("Token renewal failed:", error);
-        await userManager.removeUser();
+        try {
+          await userManager.removeUser();
+        } catch (removeError) {
+          console.warn("Unable to remove local user after token renewal failure:", removeError);
+        }
         return null;
       } finally {
         renewalInFlight = null;
@@ -56,18 +66,29 @@ export function createOidcAuthAdapter(config: OidcConfig): AuthAdapter {
 
     async completeSignInIfNeeded() {
       const params = new URLSearchParams(window.location.search);
-      const hasAuthParams = params.has("code") && params.has("state");
 
+      if (params.has("error")) {
+        const description =
+          params.get("error_description") ??
+          params.get("error") ??
+          "Authentication failed";
+        stripAuthParamsFromUrl();
+        throw new Error(description);
+      }
+
+      const hasAuthParams = params.has("code") && params.has("state");
       if (!hasAuthParams) return null;
 
-      const user = await userManager.signinCallback();
-      const cleanUrl = `${window.location.origin}${window.location.pathname}${window.location.hash}`;
-      window.history.replaceState({}, document.title, cleanUrl);
-      return mapUser(user);
+      try {
+        const user = await userManager.signinCallback();
+        return mapUser(user);
+      } finally {
+        stripAuthParamsFromUrl();
+      }
     },
 
     async getCurrentUser() {
-      let user = await userManager.getUser();
+      const user = await userManager.getUser();
       if (!user) return null;
 
       if (user.expired) {
@@ -95,6 +116,9 @@ export function createOidcAuthAdapter(config: OidcConfig): AuthAdapter {
     },
 
     setupTokenRenewal() {
+      if (renewalListenersBound) return;
+      renewalListenersBound = true;
+
       userManager.events.addAccessTokenExpiring(async () => {
         await renewTokens();
       });
@@ -103,8 +127,16 @@ export function createOidcAuthAdapter(config: OidcConfig): AuthAdapter {
         await renewTokens();
       });
 
+      userManager.events.addSilentRenewError((error) => {
+        console.error("Silent renew error:", error);
+      });
+
       userManager.events.addUserSignedOut(async () => {
-        await userManager.removeUser();
+        try {
+          await userManager.removeUser();
+        } catch (error) {
+          console.warn("Unable to remove local user after sign out:", error);
+        }
       });
     },
   };

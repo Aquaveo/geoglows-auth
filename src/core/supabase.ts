@@ -7,6 +7,14 @@ export function createGeoglowsSupabaseClient({
   auth,
   useIdToken = true,
 }: SupabaseFactoryOptions): GeoglowsSupabaseClient {
+  if (!url?.trim()) {
+    throw new Error("Supabase URL is required");
+  }
+
+  if (!publishableKey?.trim()) {
+    throw new Error("Supabase publishable key is required");
+  }
+
   return createClient(url, publishableKey, {
     accessToken: async () => {
       const user = await auth.getCurrentUser();
