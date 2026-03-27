@@ -1,6 +1,6 @@
 {
   "name": "@aquaveo/geoglows-auth",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": "Aquaveo",
   "description": "Authentication library for GEOGloWS portals",
   "license": "MIT",
