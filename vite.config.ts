@@ -14,9 +14,9 @@ export default defineConfig({
       formats: ["es", "cjs"],
     },
     rollupOptions: {
-      external: ["react", "react-dom"],
+      external: [/^react($|\/)/, /^react-dom($|\/)/, /^lucide-react($|\/)/],
     },
     sourcemap: true,
-    emptyOutDir: true,
+    emptyOutDir: false,
   },
 });

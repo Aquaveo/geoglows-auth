@@ -5,3 +5,4 @@ export * from "./LoginPage";
 export * from "./OrgSelector";
 export * from "./OrgSettings";
 export * from "./UserMenu";
+export * from "./SidebarAuth";
