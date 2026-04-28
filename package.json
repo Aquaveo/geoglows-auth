@@ -38,9 +38,19 @@
     "test:watch": "vitest"
   },
   "peerDependencies": {
+    "@supabase/auth-ui-react": "^0.4.0",
+    "@supabase/auth-ui-shared": "^0.1.0",
     "lucide-react": ">=0.400.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@supabase/auth-ui-react": {
+      "optional": true
+    },
+    "@supabase/auth-ui-shared": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.50.0",
@@ -48,6 +58,10 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@supabase/auth-ui-react": "^0.4.7",
+    "@supabase/auth-ui-shared": "^0.1.8",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
