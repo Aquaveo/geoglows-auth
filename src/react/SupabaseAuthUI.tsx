@@ -19,7 +19,21 @@ export interface SupabaseAuthUIProps {
    * and magic-link options are rendered with an inline toggle.
    */
   mode?: SupabaseAuthMode;
+  /**
+   * Fires only after a successful **password** sign-in, with the resulting
+   * `AuthUser`. Magic-link mode does **not** fire this callback — the user
+   * completes that flow in a separate browser context (the email link
+   * click), so no session exists at the time the form returns to the
+   * confirmation state. Listen to `supabase.auth.onAuthStateChange` at the
+   * app root if you need to react to magic-link or OAuth completions.
+   */
   onSuccess?: (user: AuthUser) => void;
+  /**
+   * Fires after any failed sign-in attempt with the raw `Error` from the
+   * adapter. The visible error message rendered by the form is intentionally
+   * generic (to prevent account enumeration); use this callback for logging,
+   * telemetry, or branching UI on specific error codes.
+   */
   onError?: (error: Error) => void;
   /**
    * Forwarded to `adapter.signInWithMagicLink` so Supabase knows where to
@@ -141,10 +155,16 @@ export function SupabaseAuthUI({
         try {
           await refresh();
         } catch (refreshError) {
-          console.error(
-            "AuthProvider refresh failed after sign-in:",
-            refreshError,
-          );
+          // Log the message only. The raw error object can include HTTP
+          // response bodies, RLS-denied messages with table names, or
+          // internal Supabase server details — anything the consumer's
+          // log forwarder (Sentry/Datadog) ingests via console.error
+          // will leak those.
+          const message =
+            refreshError instanceof Error
+              ? refreshError.message
+              : String(refreshError);
+          console.error("AuthProvider refresh failed after sign-in:", message);
         }
         onSuccess?.(user);
       } else {

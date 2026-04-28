@@ -227,6 +227,16 @@ in their email client or the OAuth provider's redirect page. Listen to
 `supabase.auth.onAuthStateChange` (or use `useAuth()`'s `refresh`) when the
 session resolves on return.
 
+> ⚠️ **Open-redirect warning.** The `redirectTo` (and `magicLinkRedirectTo`)
+> values are forwarded to Supabase verbatim. **Never read these from
+> untrusted sources** — for example, a `?redirect=` URL parameter the
+> attacker controls — without an allow-list. An attacker who can influence
+> the value can redirect the victim to a phishing page after sign-in.
+> Always pass a fixed origin you control (e.g. `window.location.origin`)
+> or whitelist against a known set of paths. Supabase's dashboard has a
+> server-side allow-list that catches obvious abuse, but client-side
+> validation is the safer first line of defense.
+
 ## Schema notes
 
 The `profiles`, `organizations`, and `org_memberships` tables are

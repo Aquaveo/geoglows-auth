@@ -407,4 +407,55 @@ describe("<SupabaseAuthUI>", () => {
       expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
     });
   });
+
+  describe("containerStyle prop", () => {
+    function getWrapperDiv() {
+      // The form is rendered inside the wrapper div; walk up from a known child.
+      const form = document.querySelector("form");
+      const wrapper = form?.parentElement;
+      if (!wrapper) throw new Error("Wrapper div not found");
+      return wrapper;
+    }
+
+    it("merges containerStyle into the form-render wrapper div", () => {
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          mode="password"
+          containerStyle={{ background: "rgb(255, 240, 240)", maxWidth: 999 }}
+        />,
+      );
+
+      const wrapper = getWrapperDiv();
+      // Caller value wins on collisions (maxWidth) and adds new keys (background).
+      expect(wrapper).toHaveStyle({ background: "rgb(255, 240, 240)" });
+      expect(wrapper).toHaveStyle({ maxWidth: "999px" });
+      // Baseline styles still apply where caller did not override.
+      expect(wrapper).toHaveStyle({ padding: "24px" });
+    });
+
+    it("merges containerStyle into the magic-link confirmation wrapper div", async () => {
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          mode="magicLink"
+          containerStyle={{ background: "rgb(240, 255, 240)" }}
+        />,
+      );
+
+      fireEvent.change(getEmailInput(), {
+        target: { value: "user@example.com" },
+      });
+      fireEvent.click(getSubmitButton());
+
+      await vi.waitFor(() => {
+        expect(screen.getByRole("status")).toBeInTheDocument();
+      });
+
+      const status = screen.getByRole("status");
+      const wrapper = status.parentElement!;
+      expect(wrapper).toHaveStyle({ background: "rgb(240, 255, 240)" });
+      expect(wrapper).toHaveStyle({ padding: "24px" });
+    });
+  });
 });
