@@ -73,7 +73,14 @@ export interface SupabaseAuthAdapter extends AuthAdapter {
 export interface SupabaseFactoryOptions {
   url: string;
   publishableKey: string;
-  auth: AuthAdapter;
+  /**
+   * External identity provider (e.g. the OIDC/Cognito adapter). When set, the
+   * Supabase client injects tokens minted by this adapter on every request.
+   * Omit or pass `null` when Supabase Auth is acting as the identity provider —
+   * in that mode the client manages its own session natively, so no external
+   * token callback is needed.
+   */
+  auth?: AuthAdapter | null;
   useIdToken?: boolean;
 }
 
