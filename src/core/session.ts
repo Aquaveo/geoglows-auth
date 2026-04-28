@@ -76,6 +76,15 @@ export function getUserDisplayInfo(
   };
 }
 
+/**
+ * Bootstraps a session: completes any pending sign-in callback, fetches the
+ * current user, syncs the profile row, and loads the account summary.
+ *
+ * Provider-agnostic: works identically with `createOidcAuthAdapter` (Cognito)
+ * and `createSupabaseAuthAdapter` (Supabase Auth). Both produce an `AuthUser`
+ * with the same shape, and the orchestration here only depends on the
+ * `AuthAdapter` interface.
+ */
 export async function bootstrapSession({
   auth,
   supabase,

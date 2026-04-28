@@ -55,10 +55,40 @@ export interface OidcConfig {
   scope?: string;
 }
 
+export type SupabaseAuthFlow = "password" | "magicLink" | "oauth";
+
+/**
+ * The subset of `SupabaseAuthFlow` that the built-in `<SupabaseAuthUI>` form
+ * renders inline. Excludes `"oauth"` because OAuth requires provider buttons
+ * and a redirect, which the built-in form does not handle — consumers wanting
+ * OAuth call `adapter.signInWithOAuth(...)` directly.
+ */
+export type SupabaseAuthMode = Exclude<SupabaseAuthFlow, "oauth">;
+
+export interface SupabaseAuthConfig {
+  supabase: SupabaseClient;
+  defaultRedirectTo?: string;
+  logoutRedirectTo?: string;
+  flow?: SupabaseAuthFlow;
+}
+
+export interface SupabaseAuthAdapter extends AuthAdapter {
+  signInWithPassword(args: { email: string; password: string }): Promise<AuthUser>;
+  signInWithMagicLink(args: { email: string; redirectTo?: string }): Promise<void>;
+  signInWithOAuth(args: { provider: string; redirectTo?: string }): Promise<void>;
+}
+
 export interface SupabaseFactoryOptions {
   url: string;
   publishableKey: string;
-  auth: AuthAdapter;
+  /**
+   * External identity provider (e.g. the OIDC/Cognito adapter). When set, the
+   * Supabase client injects tokens minted by this adapter on every request.
+   * Omit or pass `null` when Supabase Auth is acting as the identity provider —
+   * in that mode the client manages its own session natively, so no external
+   * token callback is needed.
+   */
+  auth?: AuthAdapter | null;
   useIdToken?: boolean;
 }
 
