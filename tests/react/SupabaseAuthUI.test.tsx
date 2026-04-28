@@ -23,11 +23,9 @@ function buildAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
   };
 }
 
-interface MockAdapter extends SupabaseAuthAdapter {
-  signInWithPassword: ReturnType<typeof vi.fn>;
-  signInWithMagicLink: ReturnType<typeof vi.fn>;
-  signInWithOAuth: ReturnType<typeof vi.fn>;
-}
+type MockAdapter = {
+  [K in keyof SupabaseAuthAdapter]: ReturnType<typeof vi.fn>;
+};
 
 function buildAdapter(): MockAdapter {
   return {
@@ -280,6 +278,43 @@ describe("<SupabaseAuthUI>", () => {
       fireEvent.click(getSubmitButton());
       expect(screen.getByRole("alert")).toHaveTextContent(/email/i);
       expect(adapter.signInWithMagicLink).not.toHaveBeenCalled();
+    });
+
+    it("surfaces magic-link errors and re-enables submit", async () => {
+      adapter.signInWithMagicLink.mockRejectedValue(new Error("Rate limited"));
+      const onError = vi.fn();
+
+      render(
+        <SupabaseAuthUI adapter={adapter} mode="magicLink" onError={onError} />,
+      );
+
+      fireEvent.change(getEmailInput(), {
+        target: { value: "user@example.com" },
+      });
+      fireEvent.click(getSubmitButton());
+
+      await vi.waitFor(() => {
+        expect(screen.getByRole("alert")).toHaveTextContent(/rate limited/i);
+      });
+      expect(onError).toHaveBeenCalledWith(expect.any(Error));
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(getSubmitButton()).not.toBeDisabled();
+    });
+
+    it("does not render the password-toggle button when locked", async () => {
+      render(<SupabaseAuthUI adapter={adapter} mode="magicLink" />);
+
+      fireEvent.change(getEmailInput(), {
+        target: { value: "user@example.com" },
+      });
+      fireEvent.click(getSubmitButton());
+
+      await vi.waitFor(() => {
+        expect(screen.getByRole("status")).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByRole("button", { name: /password/i }),
+      ).toBeNull();
     });
   });
 

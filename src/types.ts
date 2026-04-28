@@ -57,6 +57,14 @@ export interface OidcConfig {
 
 export type SupabaseAuthFlow = "password" | "magicLink" | "oauth";
 
+/**
+ * The subset of `SupabaseAuthFlow` that the built-in `<SupabaseAuthUI>` form
+ * renders inline. Excludes `"oauth"` because OAuth requires provider buttons
+ * and a redirect, which the built-in form does not handle — consumers wanting
+ * OAuth call `adapter.signInWithOAuth(...)` directly.
+ */
+export type SupabaseAuthMode = Exclude<SupabaseAuthFlow, "oauth">;
+
 export interface SupabaseAuthConfig {
   supabase: SupabaseClient;
   defaultRedirectTo?: string;

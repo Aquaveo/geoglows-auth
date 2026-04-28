@@ -6,10 +6,11 @@ import {
 import type {
   AuthUser,
   SupabaseAuthAdapter,
+  SupabaseAuthMode,
 } from "../types";
 import { useAuth } from "./AuthProvider";
 
-export type SupabaseAuthMode = "password" | "magicLink";
+export type { SupabaseAuthMode };
 
 export interface SupabaseAuthUIProps {
   adapter: SupabaseAuthAdapter;
@@ -33,7 +34,7 @@ export interface SupabaseAuthUIProps {
   containerStyle?: CSSProperties;
 }
 
-const styles: Record<string, CSSProperties> = {
+const styles = {
   container: {
     padding: 24,
     maxWidth: 360,
@@ -74,7 +75,7 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: 4,
     background: "#f6f6f6",
   },
-};
+} as const satisfies Record<string, CSSProperties>;
 
 const DEFAULT_MAGIC_LINK_MESSAGE = "Check your email for the sign-in link.";
 
@@ -88,19 +89,16 @@ export function SupabaseAuthUI({
   containerStyle,
 }: SupabaseAuthUIProps) {
   const { refresh } = useAuth();
-  const lockedMode = mode !== undefined;
-  const [activeMode, setActiveMode] = useState<SupabaseAuthMode>(
-    mode ?? "password",
-  );
+  // `activeMode` is only consulted in toggle mode (when `mode` is omitted).
+  const [activeMode, setActiveMode] = useState<SupabaseAuthMode>("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
 
-  const currentMode: SupabaseAuthMode = lockedMode
-    ? (mode as SupabaseAuthMode)
-    : activeMode;
+  const isModeLocked = mode !== undefined;
+  const currentMode = mode ?? activeMode;
 
   function switchMode(next: SupabaseAuthMode) {
     setActiveMode(next);
@@ -118,7 +116,7 @@ export function SupabaseAuthUI({
       setErrorMessage("Please enter your email address.");
       return;
     }
-    if (currentMode === "password" && !password) {
+    if (currentMode === "password" && !password.trim()) {
       setErrorMessage("Please enter your password.");
       return;
     }
@@ -150,6 +148,9 @@ export function SupabaseAuthUI({
       const error = err instanceof Error ? err : new Error(String(err));
       setErrorMessage(error.message);
       onError?.(error);
+      // Clear the password so a failed value doesn't linger in state.
+      // Email is preserved so the user only re-types the password.
+      if (currentMode === "password") setPassword("");
     } finally {
       setPending(false);
     }
@@ -161,7 +162,7 @@ export function SupabaseAuthUI({
         <p style={styles.confirmation} role="status">
           {magicLinkSentMessage ?? DEFAULT_MAGIC_LINK_MESSAGE}
         </p>
-        {!lockedMode && (
+        {!isModeLocked && (
           <p style={styles.toggleRow}>
             <button
               type="button"
@@ -225,7 +226,7 @@ export function SupabaseAuthUI({
               : "Send sign-in link"}
         </button>
       </form>
-      {!lockedMode && (
+      {!isModeLocked && (
         <p style={styles.toggleRow}>
           {currentMode === "password" ? (
             <button
