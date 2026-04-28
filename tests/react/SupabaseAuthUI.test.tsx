@@ -124,10 +124,9 @@ describe("<SupabaseAuthUI>", () => {
       expect(adapter.signInWithPassword).not.toHaveBeenCalled();
     });
 
-    it("shows the adapter error message and calls onError when sign-in fails", async () => {
-      adapter.signInWithPassword.mockRejectedValue(
-        new Error("Invalid login credentials"),
-      );
+    it("shows a generic error and forwards the raw error to onError when sign-in fails", async () => {
+      const rawError = new Error("Email not confirmed");
+      adapter.signInWithPassword.mockRejectedValue(rawError);
       const onError = vi.fn();
       const onSuccess = vi.fn();
 
@@ -147,13 +146,18 @@ describe("<SupabaseAuthUI>", () => {
       fireEvent.click(getSubmitButton());
 
       await vi.waitFor(() => {
+        // Visible message must be generic — never leak the raw backend message
+        // (e.g. "Email not confirmed") because it enables account enumeration.
         expect(screen.getByRole("alert")).toHaveTextContent(
-          /invalid login credentials/i,
+          /sign-in failed\. please check your email and password/i,
+        );
+        expect(screen.getByRole("alert")).not.toHaveTextContent(
+          /email not confirmed/i,
         );
       });
-      expect(onError).toHaveBeenCalledWith(expect.any(Error));
+      // The raw error still flows to onError so consumers can log it.
+      expect(onError).toHaveBeenCalledWith(rawError);
       expect(onSuccess).not.toHaveBeenCalled();
-      // Submit button is re-enabled
       expect(getSubmitButton()).not.toBeDisabled();
     });
 
@@ -280,8 +284,9 @@ describe("<SupabaseAuthUI>", () => {
       expect(adapter.signInWithMagicLink).not.toHaveBeenCalled();
     });
 
-    it("surfaces magic-link errors and re-enables submit", async () => {
-      adapter.signInWithMagicLink.mockRejectedValue(new Error("Rate limited"));
+    it("shows a generic error and forwards the raw error to onError when magic-link send fails", async () => {
+      const rawError = new Error("Rate limited");
+      adapter.signInWithMagicLink.mockRejectedValue(rawError);
       const onError = vi.fn();
 
       render(
@@ -294,11 +299,37 @@ describe("<SupabaseAuthUI>", () => {
       fireEvent.click(getSubmitButton());
 
       await vi.waitFor(() => {
-        expect(screen.getByRole("alert")).toHaveTextContent(/rate limited/i);
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          /couldn't send the sign-in link/i,
+        );
+        expect(screen.getByRole("alert")).not.toHaveTextContent(
+          /rate limited/i,
+        );
       });
-      expect(onError).toHaveBeenCalledWith(expect.any(Error));
+      expect(onError).toHaveBeenCalledWith(rawError);
       expect(screen.queryByRole("status")).toBeNull();
       expect(getSubmitButton()).not.toBeDisabled();
+    });
+
+    it("returns to the form when the user clicks 'Use a different email address' on the confirmation panel", async () => {
+      render(<SupabaseAuthUI adapter={adapter} mode="magicLink" />);
+
+      fireEvent.change(getEmailInput(), {
+        target: { value: "typo@example.com" },
+      });
+      fireEvent.click(getSubmitButton());
+
+      await vi.waitFor(() => {
+        expect(screen.getByRole("status")).toBeInTheDocument();
+      });
+
+      fireEvent.click(
+        screen.getByRole("button", { name: /different email address/i }),
+      );
+
+      // Form is back, email input is empty.
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(getEmailInput().value).toBe("");
     });
 
     it("does not render the password-toggle button when locked", async () => {

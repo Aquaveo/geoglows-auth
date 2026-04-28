@@ -271,6 +271,84 @@ The package supports both adapters simultaneously. Migration considerations:
 In both directions, the application code change itself is small — swap the
 factory call. The data and policy work is the bulk of the effort.
 
+## Upgrading from `0.1.x` to `0.2.x`
+
+`0.2.0` reshapes the `<SupabaseAuthUI>` component and removes its peer
+dependencies. Consumers upgrading from `0.1.x` need to make the
+following changes.
+
+### `<SupabaseAuthUI>` prop changes
+
+The component is now form-based and works against the
+`SupabaseAuthAdapter` directly (no separate Supabase client prop). Old
+props that delegated to `@supabase/auth-ui-react` no longer exist.
+
+| Old prop (`0.1.x`) | New equivalent (`0.2.x`) |
+|---|---|
+| `supabase: SupabaseClient` (required) | `adapter: SupabaseAuthAdapter` (required) — pass the result of `createSupabaseAuthAdapter` |
+| `providers: string[]` | Removed. For OAuth, render your own buttons calling `adapter.signInWithOAuth({ provider })` directly. |
+| `view: 'sign_in' \| 'magic_link' \| ...` | `mode: 'password' \| 'magicLink'` — narrower set; omit for both modes with a toggle |
+| `appearance: { theme, ... }` | Removed. The form uses inline styles. For polished theming, use the shadcn path (Login UI option 2) or replace the component. |
+| `redirectTo: string` | `magicLinkRedirectTo: string` (magic-link only) |
+| `onAuthEvent: (e) => void` | Replaced — see the next section. |
+| `fallback: ReactNode` | Removed. The component renders synchronously now. |
+
+### Replacing `onAuthEvent`
+
+The old wrapper subscribed to `supabase.auth.onAuthStateChange` and fired
+`onAuthEvent` on every event (`SIGNED_IN`, `SIGNED_OUT`, `TOKEN_REFRESHED`,
+`PASSWORD_RECOVERY`, etc.). The new component does **not** subscribe to
+auth events on its own — it only fires `onSuccess(user)` after a
+successful password sign-in.
+
+If you used `onAuthEvent` to invalidate caches on sign-out, react to token
+refreshes, or handle password-recovery flows, wire your own listener at
+the app root next to where you create the Supabase client:
+
+```tsx
+import { useEffect } from "react";
+
+useEffect(() => {
+  const { data } = supabaseClient.auth.onAuthStateChange((event, session) => {
+    if (event === "SIGNED_OUT") {
+      // Invalidate caches, redirect to /login, etc.
+    }
+    if (event === "TOKEN_REFRESHED") {
+      // Optional: refresh any in-memory data tied to the access token.
+    }
+    if (event === "PASSWORD_RECOVERY") {
+      // Show your password-reset UI.
+    }
+  });
+  return () => data.subscription.unsubscribe();
+}, [supabaseClient]);
+```
+
+This listener is not coupled to the form component, so it keeps working
+regardless of where the user signed in (form, OAuth redirect, magic
+link).
+
+### Removed peer dependencies
+
+`@supabase/auth-ui-react` and `@supabase/auth-ui-shared` are no longer
+peer dependencies. If you had them in your `package.json` solely because
+this library required them, you can remove them. If you imported their
+types or components directly in your app, those imports continue to work
+as long as you still install the packages yourself.
+
+### Visible error messages are now generic
+
+In `0.1.x`, sign-in failures rendered the raw backend error message
+(e.g. `"Email not confirmed"`, `"Rate limited"`). In `0.2.x`, the
+visible message is a fixed generic string to prevent account
+enumeration attacks. The original error is still passed to your
+`onError(error)` callback for logging and telemetry.
+
+If you relied on the visible error text for product-specific UX
+(e.g. showing a "resend confirmation" button when the message contained
+`"not confirmed"`), branch on the `Error` instance you receive in
+`onError` instead, then drive your UI from that.
+
 ## FAQ
 
 ### Can I instantiate both adapters in the same app?

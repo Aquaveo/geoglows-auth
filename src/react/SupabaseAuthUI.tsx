@@ -79,6 +79,16 @@ const styles = {
 
 const DEFAULT_MAGIC_LINK_MESSAGE = "Check your email for the sign-in link.";
 
+// Visible error copy is intentionally generic. Distinct messages from the
+// auth backend (e.g. "Email not confirmed" vs "Invalid login credentials")
+// would let an attacker enumerate registered accounts. The raw error is
+// still passed to the consumer's `onError` handler for logging or
+// non-visible diagnostics.
+const GENERIC_PASSWORD_ERROR =
+  "Sign-in failed. Please check your email and password and try again.";
+const GENERIC_MAGIC_LINK_ERROR =
+  "We couldn't send the sign-in link. Please try again.";
+
 export function SupabaseAuthUI({
   adapter,
   mode,
@@ -146,7 +156,11 @@ export function SupabaseAuthUI({
       }
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
-      setErrorMessage(error.message);
+      setErrorMessage(
+        currentMode === "password"
+          ? GENERIC_PASSWORD_ERROR
+          : GENERIC_MAGIC_LINK_ERROR,
+      );
       onError?.(error);
       // Clear the password so a failed value doesn't linger in state.
       // Email is preserved so the user only re-types the password.
@@ -156,11 +170,26 @@ export function SupabaseAuthUI({
     }
   }
 
+  function resetMagicLinkForm() {
+    setMagicLinkSent(false);
+    setEmail("");
+    setErrorMessage(null);
+  }
+
   if (currentMode === "magicLink" && magicLinkSent) {
     return (
       <div style={{ ...styles.container, ...containerStyle }}>
         <p style={styles.confirmation} role="status">
           {magicLinkSentMessage ?? DEFAULT_MAGIC_LINK_MESSAGE}
+        </p>
+        <p style={styles.toggleRow}>
+          <button
+            type="button"
+            style={styles.toggleButton}
+            onClick={resetMagicLinkForm}
+          >
+            Use a different email address
+          </button>
         </p>
         {!isModeLocked && (
           <p style={styles.toggleRow}>
