@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createSupabaseAuthAdapter } from "./supabase-auth";
-import type { SupabaseAuthAdapter } from "../types";
+import { createSupabaseAuthAdapter } from "../../src/core/supabase-auth";
+import type { SupabaseAuthAdapter } from "../../src/types";
 
 interface MockAuth {
   getSession: ReturnType<typeof vi.fn>;

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { bootstrapSession, type SessionState } from "./session";
-import { createSupabaseAuthAdapter } from "./supabase-auth";
+import { bootstrapSession, type SessionState } from "../../src/core/session";
+import { createSupabaseAuthAdapter } from "../../src/core/supabase-auth";
 
 interface MockSupabaseClient {
   auth: {

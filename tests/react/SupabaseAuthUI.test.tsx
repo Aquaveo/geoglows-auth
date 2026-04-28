@@ -14,11 +14,11 @@ vi.mock("@supabase/auth-ui-react", () => ({
 }));
 
 const refreshMock = vi.fn(async () => {});
-vi.mock("./AuthProvider", () => ({
+vi.mock("../../src/react/AuthProvider", () => ({
   useAuth: () => ({ refresh: refreshMock }),
 }));
 
-import { SupabaseAuthUI } from "./SupabaseAuthUI";
+import { SupabaseAuthUI } from "../../src/react/SupabaseAuthUI";
 
 interface AuthStateChangeListener {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -243,7 +243,9 @@ describe("<SupabaseAuthUI> when @supabase/auth-ui-react is not installed", () =>
     });
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const { SupabaseAuthUI: ReloadedAuthUI } = await import("./SupabaseAuthUI");
+    const { SupabaseAuthUI: ReloadedAuthUI } = await import(
+      "../../src/react/SupabaseAuthUI"
+    );
     const supabase = buildMockSupabase();
 
     class ErrorBoundary extends (

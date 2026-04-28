@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
-import { createGeoglowsSupabaseClient } from "./supabase";
-import type { AuthAdapter, AuthUser } from "../types";
+import { createGeoglowsSupabaseClient } from "../../src/core/supabase";
+import type { AuthAdapter, AuthUser } from "../../src/types";
 
 vi.mock("@supabase/supabase-js", () => ({
   createClient: vi.fn(() => ({ __mock: "client" })),
