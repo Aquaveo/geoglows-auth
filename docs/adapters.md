@@ -121,36 +121,69 @@ export const supabase = createGeoglowsSupabaseClient({
 4. RLS policies use `auth.uid()` directly — no external JWKS verification
    required
 
-### Login UI option 1: prebuilt wrapper
+### Login UI option 1: built-in `<SupabaseAuthUI>`
+
+The package ships a small, dependency-free form component that supports
+password sign-in and magic-link sign-in. When `mode` is omitted it renders
+both options with a built-in toggle.
 
 ```tsx
 import { SupabaseAuthUI } from "@aquaveo/geoglows-auth/react";
-import { ThemeSupa } from "@supabase/auth-ui-shared";
+import { auth } from "./auth";
 
 function SignInScreen() {
   return (
     <SupabaseAuthUI
-      supabase={supabaseClient}
-      providers={["google", "github"]}
-      appearance={{ theme: ThemeSupa }}
-      redirectTo={window.location.origin}
+      adapter={auth}
+      magicLinkRedirectTo={window.location.origin}
+      onSuccess={(user) => console.log("signed in:", user)}
+      onError={(err) => console.error(err)}
     />
   );
 }
 ```
 
-The wrapper subscribes to `supabase.auth.onAuthStateChange` and calls
-`AuthProvider.refresh()` on `SIGNED_IN` / `SIGNED_OUT` automatically — no
-manual wiring needed.
+After a successful password sign-in, the component calls
+`useAuth().refresh()` automatically so `AuthProvider`'s context picks up the
+new user without a manual reload. After a successful magic-link request, the
+component switches to a "check your email" confirmation state — the actual
+session resolves in a separate browser context when the user clicks the link.
 
-`@supabase/auth-ui-react` and `@supabase/auth-ui-shared` are optional peer
-dependencies. Install them if you use this wrapper:
+Available props:
+
+| Prop | Purpose |
+|---|---|
+| `adapter` (required) | The `SupabaseAuthAdapter` returned from `createSupabaseAuthAdapter` |
+| `mode?` | `"password"` or `"magicLink"` — locks the form to one method. Omit to render both with a toggle |
+| `onSuccess?` | Called with the `AuthUser` after a successful password sign-in |
+| `onError?` | Called with the `Error` after a failed sign-in attempt |
+| `magicLinkRedirectTo?` | Forwarded to Supabase so it knows where to send the user after the magic-link click |
+| `magicLinkSentMessage?` | Override the default "Check your email for the sign-in link." confirmation copy |
+| `containerStyle?` | Inline style applied to the wrapper `<div>` |
+
+The form is intentionally minimal (inline styles, no theme). If you want
+polish, see option 2.
+
+### Login UI option 2: shadcn-generated form (in your own app)
+
+If your app uses Tailwind + shadcn/ui, you can generate a polished
+Supabase-blessed form with one command **in the app, not in this library**:
 
 ```bash
-npm install @supabase/auth-ui-react @supabase/auth-ui-shared
+npx shadcn add @supabase/password-based-auth-react
 ```
 
-### Login UI option 2: custom (headless)
+This copies the registry components into your project and adds shadcn
+primitives if they're missing. Wire the generated form to our adapter by
+calling `auth.signInWithPassword({ email, password })` (or any of the other
+headless methods) in its submit handler, then call `useAuth().refresh()` so
+the React context picks up the new user.
+
+This library deliberately does **not** bundle shadcn output for you, because
+doing so would force Tailwind + shadcn assumptions on every consumer — not
+all consumers (the apps.geoglows portal, for example) use Tailwind.
+
+### Login UI option 3: custom (headless)
 
 If you want full control over branding and UX, build your own form using the
 adapter's headless methods:
@@ -248,10 +281,19 @@ collide. But there's no good reason to — pick one identity model per app.
 
 ### Does `<SupabaseAuthUI>` work with the Cognito adapter?
 
-No. `<SupabaseAuthUI>` requires a Supabase client instance and renders
-inline forms. The Cognito adapter uses a redirect flow with the Cognito
-hosted UI — use `<LoginPage />` (or your own button calling
-`useAuth().signIn()`) for that.
+No. `<SupabaseAuthUI>` accepts a `SupabaseAuthAdapter` and calls its
+`signInWithPassword` / `signInWithMagicLink` extension methods, which only
+exist on the Supabase Auth adapter. The Cognito adapter uses a redirect
+flow with the Cognito hosted UI — use `<LoginPage />` (or your own button
+calling `useAuth().signIn()`) for that.
+
+### How do I add OAuth provider buttons (Google, GitHub, etc.)?
+
+The built-in `<SupabaseAuthUI>` covers password and magic-link flows
+only. For OAuth, render your own provider buttons and call
+`auth.signInWithOAuth({ provider, redirectTo })` directly from each
+button's onClick handler. The headless adapter method handles the redirect
+to Supabase, which in turn redirects to the OAuth provider.
 
 ### What happens if the consumer forgets to omit `auth` in Supabase Auth mode?
 

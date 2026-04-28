@@ -27,15 +27,14 @@ If you plan to use the Cognito (OIDC) adapter, also install:
 npm install oidc-client-ts
 ```
 
-If you plan to use the Supabase Auth adapter with the prebuilt UI wrapper:
-
-```bash
-npm install @supabase/auth-ui-react @supabase/auth-ui-shared
-```
-
-`@supabase/auth-ui-react` is an **optional peer dependency** — install it only
-if you use `<SupabaseAuthUI>`. Consumers who build custom forms with the
-adapter's headless methods (`signInWithPassword`, etc.) do not need it.
+The Supabase Auth adapter ships a small, dependency-free `<SupabaseAuthUI>`
+form component built on standard HTML elements. No additional UI peer
+dependencies are required. Consumers who want a polished, branded form can
+build their own using the adapter's headless methods
+(`signInWithPassword`, `signInWithMagicLink`, `signInWithOAuth`) — or, if
+their app uses Tailwind/shadcn, run
+`npx shadcn add @supabase/password-based-auth-react` in the **app** and
+wire it to the adapter. See [`docs/adapters.md`](./docs/adapters.md).
 
 ## Quick start — Cognito (OIDC)
 
@@ -117,7 +116,7 @@ function App() {
 | Adapter | Recommended UI | Why |
 |---|---|---|
 | Cognito | `<LoginPage />` (built-in button → redirects to Cognito hosted UI) | OIDC is a redirect flow |
-| Supabase Auth | `<SupabaseAuthUI />` wrapper (around `@supabase/auth-ui-react`) | Inline form for password / magic-link / OAuth |
+| Supabase Auth | Built-in `<SupabaseAuthUI />` (minimal form: password + magic link) | Inline sign-in without external UI deps |
 | Either, custom UI | Build your own using adapter methods | Full control over branding |
 
 See [`docs/adapters.md`](./docs/adapters.md) for examples of each.
