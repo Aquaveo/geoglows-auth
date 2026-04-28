@@ -1,17 +1,6 @@
 import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let lastAuthProps: any = null;
-const mockAuth = vi.fn((props: Record<string, unknown>) => {
-  lastAuthProps = props;
-  return <div data-testid="mock-supabase-auth">supabase-auth-ui</div>;
-});
-
-vi.mock("@supabase/auth-ui-react", () => ({
-  Auth: mockAuth,
-}));
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 const refreshMock = vi.fn(async () => {});
 vi.mock("../../src/react/AuthProvider", () => ({
@@ -19,39 +8,65 @@ vi.mock("../../src/react/AuthProvider", () => ({
 }));
 
 import { SupabaseAuthUI } from "../../src/react/SupabaseAuthUI";
+import type { AuthUser, SupabaseAuthAdapter } from "../../src/types";
 
-interface AuthStateChangeListener {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (event: string, session: any): void;
-}
-
-interface MockSupabase {
-  auth: {
-    onAuthStateChange: ReturnType<typeof vi.fn>;
-  };
-  __emit(event: string, session: unknown): void;
-}
-
-function buildMockSupabase(): MockSupabase {
-  let listener: AuthStateChangeListener | null = null;
-  const unsubscribe = vi.fn();
-  const onAuthStateChange = vi.fn((cb: AuthStateChangeListener) => {
-    listener = cb;
-    return { data: { subscription: { unsubscribe } } };
-  });
+function buildAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
   return {
-    auth: { onAuthStateChange },
-    __emit(event, session) {
-      listener?.(event, session);
-    },
+    sub: "user-1",
+    email: "user@example.com",
+    name: "User One",
+    access_token: "token",
+    id_token: undefined,
+    expired: false,
+    profile: {},
+    ...overrides,
   };
+}
+
+interface MockAdapter extends SupabaseAuthAdapter {
+  signInWithPassword: ReturnType<typeof vi.fn>;
+  signInWithMagicLink: ReturnType<typeof vi.fn>;
+  signInWithOAuth: ReturnType<typeof vi.fn>;
+}
+
+function buildAdapter(): MockAdapter {
+  return {
+    clearStaleAuthState: vi.fn(async () => {}),
+    completeSignInIfNeeded: vi.fn(async () => null),
+    getCurrentUser: vi.fn(async () => null),
+    signInRedirect: vi.fn(async () => {}),
+    signOutRedirect: vi.fn(async () => {}),
+    setupTokenRenewal: vi.fn(),
+    signInWithPassword: vi.fn(async () => buildAuthUser()),
+    signInWithMagicLink: vi.fn(async () => {}),
+    signInWithOAuth: vi.fn(async () => {}),
+  };
+}
+
+function getEmailInput() {
+  return screen.getByLabelText(/email/i) as HTMLInputElement;
+}
+
+function getPasswordInput() {
+  return screen.getByLabelText(/password/i) as HTMLInputElement;
+}
+
+function getSubmitButton() {
+  // Find the form's submit button by type, not by accessible name —
+  // the magic-link toggle button also starts with "Sign in".
+  const buttons = screen.getAllByRole("button") as HTMLButtonElement[];
+  const submit = buttons.find((b) => b.type === "submit");
+  if (!submit) throw new Error("Submit button not found in document");
+  return submit;
 }
 
 describe("<SupabaseAuthUI>", () => {
+  let adapter: MockAdapter;
+
   beforeEach(() => {
-    refreshMock.mockClear();
-    mockAuth.mockClear();
-    lastAuthProps = null;
+    adapter = buildAdapter();
+    refreshMock.mockReset();
+    refreshMock.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -59,226 +74,271 @@ describe("<SupabaseAuthUI>", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the underlying Supabase Auth UI with forwarded props", async () => {
-    const supabase = buildMockSupabase();
+  describe("password mode (locked)", () => {
+    it("calls signInWithPassword with trimmed email and password, refreshes, and fires onSuccess", async () => {
+      const user = buildAuthUser({ sub: "abc" });
+      adapter.signInWithPassword.mockResolvedValue(user);
+      const onSuccess = vi.fn();
 
-    render(
-      <SupabaseAuthUI
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        supabase={supabase as any}
-        providers={["google", "github"]}
-        redirectTo="https://app.example.com/auth/callback"
-      />,
-    );
+      render(
+        <SupabaseAuthUI adapter={adapter} mode="password" onSuccess={onSuccess} />,
+      );
 
-    await waitFor(() => screen.getByTestId("mock-supabase-auth"));
+      fireEvent.change(getEmailInput(), {
+        target: { value: "  user@example.com  " },
+      });
+      fireEvent.change(getPasswordInput(), { target: { value: "hunter2" } });
+      fireEvent.click(getSubmitButton());
 
-    expect(lastAuthProps.supabaseClient).toBe(supabase);
-    expect(lastAuthProps.providers).toEqual(["google", "github"]);
-    expect(lastAuthProps.redirectTo).toBe("https://app.example.com/auth/callback");
-  });
-
-  it("forwards `appearance` prop transparently", async () => {
-    const supabase = buildMockSupabase();
-    const appearance = { theme: { default: { colors: { brand: "#aabbcc" } } } };
-
-    render(
-      <SupabaseAuthUI
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        supabase={supabase as any}
-        appearance={appearance}
-      />,
-    );
-
-    await waitFor(() => screen.getByTestId("mock-supabase-auth"));
-    expect(lastAuthProps.appearance).toBe(appearance);
-  });
-
-  it("renders without an appearance prop by passing undefined", async () => {
-    const supabase = buildMockSupabase();
-
-    render(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      <SupabaseAuthUI supabase={supabase as any} />,
-    );
-
-    await waitFor(() => screen.getByTestId("mock-supabase-auth"));
-    expect(lastAuthProps.appearance).toBeUndefined();
-  });
-
-  it("calls AuthProvider.refresh() on SIGNED_IN events", async () => {
-    const supabase = buildMockSupabase();
-
-    render(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      <SupabaseAuthUI supabase={supabase as any} />,
-    );
-
-    await waitFor(() => screen.getByTestId("mock-supabase-auth"));
-
-    await act(async () => {
-      supabase.__emit("SIGNED_IN", { user: { id: "u1" } });
+      await vi.waitFor(() => {
+        expect(adapter.signInWithPassword).toHaveBeenCalledWith({
+          email: "user@example.com",
+          password: "hunter2",
+        });
+      });
+      await vi.waitFor(() => {
+        expect(refreshMock).toHaveBeenCalled();
+      });
+      await vi.waitFor(() => {
+        expect(onSuccess).toHaveBeenCalledWith(user);
+      });
     });
 
-    expect(refreshMock).toHaveBeenCalledTimes(1);
-  });
+    it("shows a validation message when submitted with empty email", async () => {
+      render(<SupabaseAuthUI adapter={adapter} mode="password" />);
 
-  it("calls AuthProvider.refresh() on SIGNED_OUT events", async () => {
-    const supabase = buildMockSupabase();
+      fireEvent.change(getPasswordInput(), { target: { value: "hunter2" } });
+      fireEvent.click(getSubmitButton());
 
-    render(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      <SupabaseAuthUI supabase={supabase as any} />,
-    );
-
-    await waitFor(() => screen.getByTestId("mock-supabase-auth"));
-
-    await act(async () => {
-      supabase.__emit("SIGNED_OUT", null);
+      expect(screen.getByRole("alert")).toHaveTextContent(/email/i);
+      expect(adapter.signInWithPassword).not.toHaveBeenCalled();
     });
 
-    expect(refreshMock).toHaveBeenCalledTimes(1);
-  });
+    it("shows a validation message when submitted with empty password", async () => {
+      render(<SupabaseAuthUI adapter={adapter} mode="password" />);
 
-  it("does NOT call refresh() for non-sign events (e.g. TOKEN_REFRESHED)", async () => {
-    const supabase = buildMockSupabase();
+      fireEvent.change(getEmailInput(), {
+        target: { value: "user@example.com" },
+      });
+      fireEvent.click(getSubmitButton());
 
-    render(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      <SupabaseAuthUI supabase={supabase as any} />,
-    );
-
-    await waitFor(() => screen.getByTestId("mock-supabase-auth"));
-
-    await act(async () => {
-      supabase.__emit("TOKEN_REFRESHED", { user: { id: "u1" } });
+      expect(screen.getByRole("alert")).toHaveTextContent(/password/i);
+      expect(adapter.signInWithPassword).not.toHaveBeenCalled();
     });
 
-    expect(refreshMock).not.toHaveBeenCalled();
-  });
+    it("shows the adapter error message and calls onError when sign-in fails", async () => {
+      adapter.signInWithPassword.mockRejectedValue(
+        new Error("Invalid login credentials"),
+      );
+      const onError = vi.fn();
+      const onSuccess = vi.fn();
 
-  it("forwards every auth event to onAuthEvent callback", async () => {
-    const supabase = buildMockSupabase();
-    const onAuthEvent = vi.fn();
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          mode="password"
+          onError={onError}
+          onSuccess={onSuccess}
+        />,
+      );
 
-    render(
-      <SupabaseAuthUI
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        supabase={supabase as any}
-        onAuthEvent={onAuthEvent}
-      />,
-    );
+      fireEvent.change(getEmailInput(), {
+        target: { value: "user@example.com" },
+      });
+      fireEvent.change(getPasswordInput(), { target: { value: "wrong" } });
+      fireEvent.click(getSubmitButton());
 
-    await waitFor(() => screen.getByTestId("mock-supabase-auth"));
-
-    const session = { user: { id: "u1" } };
-    await act(async () => {
-      supabase.__emit("SIGNED_IN", session);
+      await vi.waitFor(() => {
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          /invalid login credentials/i,
+        );
+      });
+      expect(onError).toHaveBeenCalledWith(expect.any(Error));
+      expect(onSuccess).not.toHaveBeenCalled();
+      // Submit button is re-enabled
+      expect(getSubmitButton()).not.toBeDisabled();
     });
-    await act(async () => {
-      supabase.__emit("TOKEN_REFRESHED", session);
-    });
-    await act(async () => {
-      supabase.__emit("SIGNED_OUT", null);
+
+    it("still fires onSuccess if AuthProvider.refresh() rejects (auth/data separation)", async () => {
+      const user = buildAuthUser();
+      adapter.signInWithPassword.mockResolvedValue(user);
+      refreshMock.mockRejectedValueOnce(new Error("RLS denied"));
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const onSuccess = vi.fn();
+
+      render(
+        <SupabaseAuthUI adapter={adapter} mode="password" onSuccess={onSuccess} />,
+      );
+
+      fireEvent.change(getEmailInput(), {
+        target: { value: "user@example.com" },
+      });
+      fireEvent.change(getPasswordInput(), { target: { value: "hunter2" } });
+      fireEvent.click(getSubmitButton());
+
+      await vi.waitFor(() => {
+        expect(onSuccess).toHaveBeenCalledWith(user);
+      });
+      expect(errorSpy).toHaveBeenCalled();
     });
 
-    expect(onAuthEvent).toHaveBeenCalledTimes(3);
-    expect(onAuthEvent).toHaveBeenNthCalledWith(1, { event: "SIGNED_IN", session });
-    expect(onAuthEvent).toHaveBeenNthCalledWith(2, {
-      event: "TOKEN_REFRESHED",
-      session,
-    });
-    expect(onAuthEvent).toHaveBeenNthCalledWith(3, {
-      event: "SIGNED_OUT",
-      session: null,
+    it("disables the submit button while a request is in flight", async () => {
+      let resolveSignIn: (user: AuthUser) => void = () => {};
+      adapter.signInWithPassword.mockImplementation(
+        () =>
+          new Promise<AuthUser>((resolve) => {
+            resolveSignIn = resolve;
+          }),
+      );
+
+      render(<SupabaseAuthUI adapter={adapter} mode="password" />);
+
+      fireEvent.change(getEmailInput(), {
+        target: { value: "user@example.com" },
+      });
+      fireEvent.change(getPasswordInput(), { target: { value: "hunter2" } });
+      fireEvent.click(getSubmitButton());
+
+      await vi.waitFor(() => expect(getSubmitButton()).toBeDisabled());
+      resolveSignIn(buildAuthUser());
+      await vi.waitFor(() => expect(getSubmitButton()).not.toBeDisabled());
     });
   });
 
-  it("unsubscribes from auth state changes on unmount", async () => {
-    const supabase = buildMockSupabase();
+  describe("magic-link mode (locked)", () => {
+    it("calls signInWithMagicLink and shows the confirmation state", async () => {
+      render(<SupabaseAuthUI adapter={adapter} mode="magicLink" />);
 
-    const { unmount } = render(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      <SupabaseAuthUI supabase={supabase as any} />,
-    );
+      fireEvent.change(getEmailInput(), {
+        target: { value: "user@example.com" },
+      });
+      fireEvent.click(getSubmitButton());
 
-    await waitFor(() => screen.getByTestId("mock-supabase-auth"));
-
-    const subscriptionResult =
-      supabase.auth.onAuthStateChange.mock.results[0].value;
-    expect(subscriptionResult.data.subscription.unsubscribe).not.toHaveBeenCalled();
-
-    unmount();
-    expect(subscriptionResult.data.subscription.unsubscribe).toHaveBeenCalledTimes(1);
-  });
-
-  it("survives a refresh() rejection without throwing", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    refreshMock.mockRejectedValueOnce(new Error("boom"));
-    const supabase = buildMockSupabase();
-
-    render(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      <SupabaseAuthUI supabase={supabase as any} />,
-    );
-
-    await waitFor(() => screen.getByTestId("mock-supabase-auth"));
-
-    await act(async () => {
-      supabase.__emit("SIGNED_IN", { user: { id: "u1" } });
+      await vi.waitFor(() => {
+        expect(adapter.signInWithMagicLink).toHaveBeenCalledWith({
+          email: "user@example.com",
+          redirectTo: undefined,
+        });
+      });
+      await vi.waitFor(() => {
+        expect(screen.getByRole("status")).toHaveTextContent(
+          /check your email/i,
+        );
+      });
     });
 
-    await waitFor(() => expect(errorSpy).toHaveBeenCalled());
-  });
-});
+    it("forwards magicLinkRedirectTo to the adapter", async () => {
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          mode="magicLink"
+          magicLinkRedirectTo="https://app.example.com/auth/callback"
+        />,
+      );
 
-describe("<SupabaseAuthUI> when @supabase/auth-ui-react is not installed", () => {
-  beforeEach(() => {
-    vi.resetModules();
-  });
+      fireEvent.change(getEmailInput(), {
+        target: { value: "user@example.com" },
+      });
+      fireEvent.click(getSubmitButton());
 
-  it("throws an actionable error pointing to the missing peer dependency", async () => {
-    vi.doMock("@supabase/auth-ui-react", () => {
-      throw new Error("Cannot find module '@supabase/auth-ui-react'");
+      await vi.waitFor(() => {
+        expect(adapter.signInWithMagicLink).toHaveBeenCalledWith({
+          email: "user@example.com",
+          redirectTo: "https://app.example.com/auth/callback",
+        });
+      });
     });
 
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const { SupabaseAuthUI: ReloadedAuthUI } = await import(
-      "../../src/react/SupabaseAuthUI"
-    );
-    const supabase = buildMockSupabase();
+    it("renders a custom magicLinkSentMessage when provided", async () => {
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          mode="magicLink"
+          magicLinkSentMessage="Magic link sent — go check Gmail."
+        />,
+      );
 
-    class ErrorBoundary extends (
-      await import("react")
-    ).Component<
-      { children: React.ReactNode },
-      { error: Error | null }
-    > {
-      state = { error: null as Error | null };
-      static getDerivedStateFromError(error: Error) {
-        return { error };
-      }
-      render() {
-        if (this.state.error) {
-          return (
-            <div data-testid="boundary-error">{this.state.error.message}</div>
-          );
-        }
-        return this.props.children;
-      }
-    }
+      fireEvent.change(getEmailInput(), {
+        target: { value: "user@example.com" },
+      });
+      fireEvent.click(getSubmitButton());
 
-    render(
-      <ErrorBoundary>
-        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-        <ReloadedAuthUI supabase={supabase as any} />
-      </ErrorBoundary>,
-    );
+      await vi.waitFor(() => {
+        expect(screen.getByRole("status")).toHaveTextContent(
+          /go check gmail/i,
+        );
+      });
+    });
 
-    await waitFor(() => screen.getByTestId("boundary-error"));
-    expect(screen.getByTestId("boundary-error").textContent).toMatch(
-      /requires `@supabase\/auth-ui-react`/,
-    );
-    errorSpy.mockRestore();
+    it("does not show a password field in magic-link mode", () => {
+      render(<SupabaseAuthUI adapter={adapter} mode="magicLink" />);
+      expect(screen.queryByLabelText(/password/i)).toBeNull();
+    });
+
+    it("validates that email is required before sending", () => {
+      render(<SupabaseAuthUI adapter={adapter} mode="magicLink" />);
+      fireEvent.click(getSubmitButton());
+      expect(screen.getByRole("alert")).toHaveTextContent(/email/i);
+      expect(adapter.signInWithMagicLink).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("toggle mode (mode prop omitted)", () => {
+    it("starts in password mode and exposes a toggle to magic link", () => {
+      render(<SupabaseAuthUI adapter={adapter} />);
+
+      expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /magic link/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("switches to magic-link mode when the toggle is clicked, hiding password", () => {
+      render(<SupabaseAuthUI adapter={adapter} />);
+
+      fireEvent.click(screen.getByRole("button", { name: /magic link/i }));
+
+      expect(screen.queryByLabelText(/password/i)).toBeNull();
+      expect(
+        screen.getByRole("button", { name: /password/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("clears errors and password when toggling modes", () => {
+      render(<SupabaseAuthUI adapter={adapter} />);
+
+      fireEvent.change(getEmailInput(), {
+        target: { value: "user@example.com" },
+      });
+      fireEvent.change(getPasswordInput(), { target: { value: "secret" } });
+      // Trigger validation error
+      fireEvent.change(getEmailInput(), { target: { value: "" } });
+      fireEvent.click(getSubmitButton());
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+
+      // Toggle modes
+      fireEvent.click(screen.getByRole("button", { name: /magic link/i }));
+
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+
+    it("after a successful magic-link send, can toggle back to password mode", async () => {
+      render(<SupabaseAuthUI adapter={adapter} />);
+
+      fireEvent.click(screen.getByRole("button", { name: /magic link/i }));
+      fireEvent.change(getEmailInput(), {
+        target: { value: "user@example.com" },
+      });
+      fireEvent.click(getSubmitButton());
+
+      await vi.waitFor(() => {
+        expect(screen.getByRole("status")).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: /password/i }));
+
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+    });
   });
 });

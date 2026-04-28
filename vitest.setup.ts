@@ -1,3 +1,5 @@
+import "@testing-library/jest-dom/vitest";
+
 // Provide a working in-memory localStorage for tests.
 //
 // Node 25 ships an experimental native `localStorage` that throws unless
