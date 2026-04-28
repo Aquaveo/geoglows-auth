@@ -10,6 +10,7 @@ export default defineConfig({
         url: "http://localhost/",
       },
     },
+    setupFiles: ["./vitest.setup.ts"],
     globals: false,
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
   },

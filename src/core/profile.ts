@@ -1,5 +1,13 @@
 import type { AuthUser, GeoglowsSupabaseClient, Profile } from "../types";
 
+/**
+ * Upserts a row in the `profiles` table for the given user.
+ *
+ * Provider-agnostic: works identically for users sourced from Cognito
+ * (`AuthUser.sub` = Cognito sub UUID) and Supabase Auth
+ * (`AuthUser.sub` = `auth.users.id` UUID). The `profiles.id` column accepts
+ * either UUID without conflict.
+ */
 export async function ensureProfile(
   supabase: GeoglowsSupabaseClient,
   user: AuthUser
@@ -20,6 +28,12 @@ export async function ensureProfile(
   return data as Profile;
 }
 
+/**
+ * Loads memberships and organizations for a given user.
+ *
+ * Provider-agnostic: `userId` is the `AuthUser.sub` value, which holds the
+ * Cognito sub or Supabase Auth user id depending on the adapter.
+ */
 export async function loadOrganizations(
   supabase: GeoglowsSupabaseClient,
   userId: string
