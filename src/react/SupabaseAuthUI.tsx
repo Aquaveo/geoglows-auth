@@ -26,6 +26,11 @@ export interface SupabaseAuthUIProps {
    * click), so no session exists at the time the form returns to the
    * confirmation state. Listen to `supabase.auth.onAuthStateChange` at the
    * app root if you need to react to magic-link or OAuth completions.
+   *
+   * Fires after `useAuth().refresh()` settles (whether it resolves or
+   * rejects — refresh failures are logged but do not block the success
+   * callback). Use the `user` argument directly rather than reading
+   * `useAuth()` at callback time if you need the freshest value.
    */
   onSuccess?: (user: AuthUser) => void;
   /**
@@ -91,13 +96,11 @@ const styles = {
   },
 } as const satisfies Record<string, CSSProperties>;
 
-const DEFAULT_MAGIC_LINK_MESSAGE = "Check your email for the sign-in link.";
-
-// Visible error copy is intentionally generic. Distinct messages from the
-// auth backend (e.g. "Email not confirmed" vs "Invalid login credentials")
-// would let an attacker enumerate registered accounts. The raw error is
-// still passed to the consumer's `onError` handler for logging or
+// `DEFAULT_` = fallback when the consumer omits the matching prop.
+// `GENERIC_` = intentionally vague to prevent account enumeration; the raw
+// error is still passed to the consumer's `onError` handler for logging or
 // non-visible diagnostics.
+const DEFAULT_MAGIC_LINK_MESSAGE = "Check your email for the sign-in link.";
 const GENERIC_PASSWORD_ERROR =
   "Sign-in failed. Please check your email and password and try again.";
 const GENERIC_MAGIC_LINK_ERROR =
@@ -181,6 +184,9 @@ export function SupabaseAuthUI({
           ? GENERIC_PASSWORD_ERROR
           : GENERIC_MAGIC_LINK_ERROR,
       );
+      // Pass the raw Error through to onError so consumers can log,
+      // telemetry, or branch on the actual backend error code. The visible
+      // message is intentionally generic; consumers handle specifics.
       onError?.(error);
       // Clear the password so a failed value doesn't linger in state.
       // Email is preserved so the user only re-types the password.

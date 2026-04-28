@@ -155,8 +155,8 @@ Available props:
 |---|---|
 | `adapter` (required) | The `SupabaseAuthAdapter` returned from `createSupabaseAuthAdapter` |
 | `mode?` | `"password"` or `"magicLink"` — locks the form to one method. Omit to render both with a toggle |
-| `onSuccess?` | Called with the `AuthUser` after a successful password sign-in |
-| `onError?` | Called with the `Error` after a failed sign-in attempt |
+| `onSuccess?` | Called with the `AuthUser` after a successful password sign-in. Not fired for magic-link or OAuth — those flows resolve in another browser context. See "Replacing `onAuthEvent`" below for a listener that handles all flows. |
+| `onError?` | Called with the raw `Error` after a failed sign-in attempt. The visible form message is intentionally generic to prevent account enumeration; branch on this callback for product-specific UX. |
 | `magicLinkRedirectTo?` | Forwarded to Supabase so it knows where to send the user after the magic-link click |
 | `magicLinkSentMessage?` | Override the default "Check your email for the sign-in link." confirmation copy |
 | `containerStyle?` | Inline style applied to the wrapper `<div>` |

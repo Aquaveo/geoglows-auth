@@ -1,5 +1,13 @@
 import * as React from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockedObject,
+} from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 const refreshMock = vi.fn(async () => {});
@@ -23,9 +31,9 @@ function buildAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
   };
 }
 
-type MockAdapter = {
-  [K in keyof SupabaseAuthAdapter]: ReturnType<typeof vi.fn>;
-};
+// Preserves per-method signatures so `.mockResolvedValue(...)` is type-checked
+// against each method's actual return type rather than collapsing to `any`.
+type MockAdapter = MockedObject<SupabaseAuthAdapter>;
 
 function buildAdapter(): MockAdapter {
   return {
@@ -42,11 +50,11 @@ function buildAdapter(): MockAdapter {
 }
 
 function getEmailInput() {
-  return screen.getByLabelText(/email/i) as HTMLInputElement;
+  return screen.getByLabelText("Email") as HTMLInputElement;
 }
 
 function getPasswordInput() {
-  return screen.getByLabelText(/password/i) as HTMLInputElement;
+  return screen.getByLabelText("Password") as HTMLInputElement;
 }
 
 function getSubmitButton() {
@@ -124,6 +132,39 @@ describe("<SupabaseAuthUI>", () => {
       expect(adapter.signInWithPassword).not.toHaveBeenCalled();
     });
 
+    it("rejects whitespace-only passwords as if empty", () => {
+      render(<SupabaseAuthUI adapter={adapter} mode="password" />);
+
+      fireEvent.change(getEmailInput(), {
+        target: { value: "user@example.com" },
+      });
+      fireEvent.change(getPasswordInput(), { target: { value: "   " } });
+      fireEvent.click(getSubmitButton());
+
+      expect(screen.getByRole("alert")).toHaveTextContent(/password/i);
+      expect(adapter.signInWithPassword).not.toHaveBeenCalled();
+    });
+
+    it("preserves passwords that contain leading/trailing spaces (does not trim before forwarding)", async () => {
+      const user = buildAuthUser();
+      adapter.signInWithPassword.mockResolvedValue(user);
+
+      render(<SupabaseAuthUI adapter={adapter} mode="password" />);
+
+      fireEvent.change(getEmailInput(), {
+        target: { value: "user@example.com" },
+      });
+      fireEvent.change(getPasswordInput(), { target: { value: " spaced " } });
+      fireEvent.click(getSubmitButton());
+
+      await vi.waitFor(() => {
+        expect(adapter.signInWithPassword).toHaveBeenCalledWith({
+          email: "user@example.com",
+          password: " spaced ",
+        });
+      });
+    });
+
     it("shows a generic error and forwards the raw error to onError when sign-in fails", async () => {
       const rawError = new Error("Email not confirmed");
       adapter.signInWithPassword.mockRejectedValue(rawError);
@@ -159,6 +200,9 @@ describe("<SupabaseAuthUI>", () => {
       expect(onError).toHaveBeenCalledWith(rawError);
       expect(onSuccess).not.toHaveBeenCalled();
       expect(getSubmitButton()).not.toBeDisabled();
+      // Password is cleared after a failed attempt so a stale value doesn't
+      // linger in component state or in the input's DOM value.
+      expect(getPasswordInput().value).toBe("");
     });
 
     it("still fires onSuccess if AuthProvider.refresh() rejects (auth/data separation)", async () => {
@@ -181,7 +225,12 @@ describe("<SupabaseAuthUI>", () => {
       await vi.waitFor(() => {
         expect(onSuccess).toHaveBeenCalledWith(user);
       });
-      expect(errorSpy).toHaveBeenCalled();
+      // Verify we log only the message string (not the raw error object) to
+      // avoid leaking internal Supabase response details into log forwarders.
+      expect(errorSpy).toHaveBeenCalledWith(
+        "AuthProvider refresh failed after sign-in:",
+        "RLS denied",
+      );
     });
 
     it("disables the submit button while a request is in flight", async () => {
