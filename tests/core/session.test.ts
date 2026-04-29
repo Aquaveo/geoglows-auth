@@ -34,54 +34,53 @@ function buildSession(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function buildClient(): MockSupabaseClient {
-  // Profile upsert chain: from(...).upsert(...).select().single()
-  const profileSingle = vi.fn().mockResolvedValue({
-    data: {
-      id: "supabase-user-uuid",
-      email: "scientist@example.com",
-      display_name: "Scientist Name",
-      created_at: "2026-01-01T00:00:00Z",
-    },
-    error: null,
-  });
-  const profileSelect = vi.fn(() => ({ single: profileSingle }));
-  const profileUpsert = vi.fn(() => ({ select: profileSelect }));
+interface ClientMocks {
+  client: MockSupabaseClient;
+  profilesMaybeSingle: ReturnType<typeof vi.fn>;
+  profilesInsert: ReturnType<typeof vi.fn>;
+  profilesInsertSingle: ReturnType<typeof vi.fn>;
+}
 
-  // Account fetch chains:
-  // - from('profiles').select('*').eq('id', userId).maybeSingle()
-  // - from('org_memberships').select(`...`).eq('user_id', userId)
+function buildClient(opts: { existingProfile?: boolean } = {}): ClientMocks {
+  const existingProfile = opts.existingProfile ?? true;
+  const profileRow = {
+    id: "supabase-user-uuid",
+    email: "scientist@example.com",
+    display_name: "Scientist Name",
+    first_name: "Scientist",
+    last_name: "Name",
+    created_at: "2026-01-01T00:00:00Z",
+  };
+
+  // Shared select chain for `from('profiles').select('*').eq('id', uid)
+  // .maybeSingle()` — used by both ensureProfile (for the existence check)
+  // and loadAccountSummary (for fetching the row to surface in state).
   const profilesMaybeSingle = vi.fn().mockResolvedValue({
-    data: {
-      id: "supabase-user-uuid",
-      email: "scientist@example.com",
-      display_name: "Scientist Name",
-    },
+    data: existingProfile ? profileRow : null,
     error: null,
   });
   const profilesEq = vi.fn(() => ({ maybeSingle: profilesMaybeSingle }));
   const profilesSelect = vi.fn(() => ({ eq: profilesEq }));
 
-  const orgMembershipsEq = vi.fn().mockResolvedValue({
-    data: [],
+  // Insert chain for ensureProfile when no row exists.
+  const profilesInsertSingle = vi.fn().mockResolvedValue({
+    data: profileRow,
     error: null,
   });
-  const orgMembershipsSelect = vi.fn(() => ({ eq: orgMembershipsEq }));
+  const profilesInsertSelect = vi.fn(() => ({ single: profilesInsertSingle }));
+  const profilesInsert = vi.fn(() => ({ select: profilesInsertSelect }));
 
   const from = vi.fn((table: string) => {
     if (table === "profiles") {
       return {
-        upsert: profileUpsert,
         select: profilesSelect,
+        insert: profilesInsert,
       };
-    }
-    if (table === "org_memberships") {
-      return { select: orgMembershipsSelect };
     }
     throw new Error(`Unexpected table: ${table}`);
   });
 
-  return {
+  const client: MockSupabaseClient = {
     auth: {
       getSession: vi.fn(),
       signOut: vi.fn().mockResolvedValue({ error: null }),
@@ -95,6 +94,8 @@ function buildClient(): MockSupabaseClient {
     },
     from,
   };
+
+  return { client, profilesMaybeSingle, profilesInsert, profilesInsertSingle };
 }
 
 function setUrl(href: string) {
@@ -102,11 +103,13 @@ function setUrl(href: string) {
 }
 
 describe("bootstrapSession with the Supabase Auth adapter", () => {
+  let mocks: ClientMocks;
   let client: MockSupabaseClient;
 
   beforeEach(() => {
     setUrl("http://localhost/");
-    client = buildClient();
+    mocks = buildClient();
+    client = mocks.client;
   });
 
   afterEach(() => {
@@ -146,9 +149,13 @@ describe("bootstrapSession with the Supabase Auth adapter", () => {
     expect(final.user?.name).toBe("Scientist Name");
     expect(final.account).not.toBeNull();
     expect(final.account?.profile?.email).toBe("scientist@example.com");
+    // Existing row was found, so insert must not have run.
+    expect(mocks.profilesInsert).not.toHaveBeenCalled();
   });
 
-  it("upserts a row in profiles using the Supabase user id as sub", async () => {
+  it("inserts a new profiles row seeded from auth metadata when none exists", async () => {
+    mocks = buildClient({ existingProfile: false });
+    client = mocks.client;
     client.auth.getSession.mockResolvedValue({
       data: { session: buildSession() },
       error: null,
@@ -164,24 +171,40 @@ describe("bootstrapSession with the Supabase Auth adapter", () => {
     });
 
     expect(client.from).toHaveBeenCalledWith("profiles");
-    // first call: upsert returned by from('profiles')
-    const profilesCall = client.from.mock.results.find(
-      (r) => r.value?.upsert,
-    );
-    const upsertFn = profilesCall?.value.upsert as ReturnType<typeof vi.fn>;
-    expect(upsertFn).toHaveBeenCalledWith(
+    expect(mocks.profilesInsert).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "supabase-user-uuid",
         email: "scientist@example.com",
         display_name: "Scientist Name",
-        // ensureProfile now also seeds first_name / last_name from
-        // user_metadata.full_name when available, plus avatar_url.
         first_name: "Scientist",
         last_name: "Name",
         avatar_url: null,
       }),
-      expect.objectContaining({ onConflict: "id" }),
     );
+  });
+
+  it("does NOT overwrite a user-edited profiles row on subsequent sign-ins", async () => {
+    // Regression for the 0.3.0 bug: ensureProfile must not re-derive
+    // first_name/last_name from user_metadata.full_name when a row
+    // already exists.
+    mocks = buildClient({ existingProfile: true });
+    client = mocks.client;
+    client.auth.getSession.mockResolvedValue({
+      data: { session: buildSession() },
+      error: null,
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const adapter = createSupabaseAuthAdapter({ supabase: client as any });
+
+    await bootstrapSession({
+      auth: adapter,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase: client as any,
+    });
+
+    expect(mocks.profilesInsert).not.toHaveBeenCalled();
+    expect(mocks.profilesInsertSingle).not.toHaveBeenCalled();
   });
 
   it("resolves to 'anonymous' when no Supabase session is active", async () => {
@@ -202,7 +225,6 @@ describe("bootstrapSession with the Supabase Auth adapter", () => {
     expect(final.status).toBe("anonymous");
     expect(final.user).toBeNull();
     expect(final.account).toBeNull();
-    // ensureProfile and loadAccountSummary should NOT have been called
     expect(client.from).not.toHaveBeenCalled();
   });
 
@@ -229,21 +251,22 @@ describe("bootstrapSession with the Supabase Auth adapter", () => {
     expect(client.from).not.toHaveBeenCalled();
   });
 
-  it("reaches 'error' state if profile upsert fails", async () => {
+  it("reaches 'error' state if the profiles select fails", async () => {
     client.auth.getSession.mockResolvedValue({
       data: { session: buildSession() },
       error: null,
     });
 
-    // Override profile upsert to reject
+    // Override profiles select chain to reject (RLS denial).
     client.from = vi.fn(() => ({
-      upsert: vi.fn(() => ({
-        select: vi.fn(() => ({
-          single: vi
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          maybeSingle: vi
             .fn()
             .mockResolvedValue({ data: null, error: new Error("rls denied") }),
         })),
       })),
+      insert: vi.fn(),
     }));
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
