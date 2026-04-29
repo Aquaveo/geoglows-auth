@@ -4,3 +4,7 @@ export * from "./hooks";
 export * from "./LoginPage";
 export * from "./SupabaseAuthUI";
 export * from "./UserMenu";
+export * from "./ProfileFields";
+export * from "./ProfileSetupForm";
+export * from "./ProfileEditForm";
+export * from "./ProfileCompletionBanner";
