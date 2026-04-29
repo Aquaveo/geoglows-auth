@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ensureProfile,
   isProfileComplete,
@@ -24,15 +24,33 @@ function buildAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
   };
 }
 
-function buildProfileMockWithUpsert(returnedRow: Partial<Profile>) {
-  const single = vi.fn().mockResolvedValue({ data: returnedRow, error: null });
-  const select = vi.fn(() => ({ single }));
-  const upsert = vi.fn(() => ({ select }));
+function buildEnsureProfileMock(opts: {
+  existing?: Partial<Profile> | null;
+  inserted?: Partial<Profile>;
+  selectError?: Error | null;
+  insertError?: Error | null;
+}) {
+  const maybeSingle = vi.fn().mockResolvedValue({
+    data: opts.existing ?? null,
+    error: opts.selectError ?? null,
+  });
+  const eq = vi.fn(() => ({ maybeSingle }));
+  const selectForLookup = vi.fn(() => ({ eq }));
+
+  const insertSingle = vi.fn().mockResolvedValue({
+    data: opts.inserted ?? {},
+    error: opts.insertError ?? null,
+  });
+  const selectAfterInsert = vi.fn(() => ({ single: insertSingle }));
+  const insert = vi.fn(() => ({ select: selectAfterInsert }));
+
   const from = vi.fn((table: string) => {
-    if (table === "profiles") return { upsert };
+    if (table === "profiles") {
+      return { select: selectForLookup, insert };
+    }
     throw new Error(`Unexpected table: ${table}`);
   });
-  return { client: { from } as MockSupabase, upsert };
+  return { client: { from } as MockSupabase, selectForLookup, eq, insert };
 }
 
 function buildProfileMockWithUpdate(returnedRow: Partial<Profile>) {
@@ -52,14 +70,17 @@ describe("ensureProfile", () => {
     vi.restoreAllMocks();
   });
 
-  it("upserts with id, email, display_name, and seeds names from full_name", async () => {
-    const { client, upsert } = buildProfileMockWithUpsert({
-      id: "user-uuid-1",
-      email: "user@example.com",
-      display_name: "Ada Lovelace",
-      first_name: "Ada",
-      last_name: "Lovelace",
-      avatar_url: "https://example.com/avatar.png",
+  it("inserts a new row seeded from user_metadata when none exists", async () => {
+    const { client, insert } = buildEnsureProfileMock({
+      existing: null,
+      inserted: {
+        id: "user-uuid-1",
+        email: "user@example.com",
+        display_name: "Ada Lovelace",
+        first_name: "Ada",
+        last_name: "Lovelace",
+        avatar_url: "https://example.com/avatar.png",
+      },
     });
 
     await ensureProfile(
@@ -68,7 +89,7 @@ describe("ensureProfile", () => {
       buildAuthUser(),
     );
 
-    expect(upsert).toHaveBeenCalledWith(
+    expect(insert).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "user-uuid-1",
         email: "user@example.com",
@@ -77,12 +98,46 @@ describe("ensureProfile", () => {
         last_name: "Lovelace",
         avatar_url: "https://example.com/avatar.png",
       }),
-      expect.objectContaining({ onConflict: "id", ignoreDuplicates: false }),
     );
   });
 
-  it("falls back to null first/last when full_name is single-word or missing", async () => {
-    const { client, upsert } = buildProfileMockWithUpsert({});
+  it("returns the existing row unchanged and does NOT insert when one is found", async () => {
+    // Regression for the 0.3.0 bug: previously, ensureProfile re-derived
+    // first_name/last_name from user_metadata.full_name on every sign-in
+    // and overwrote user-edited values. With select-then-insert the
+    // existing row is returned untouched.
+    const userEditedRow: Partial<Profile> = {
+      id: "user-uuid-1",
+      email: "user@example.com",
+      first_name: "Jerry",          // user edited this
+      middle_name: "X",
+      last_name: "Romero",
+      display_name: "Jerry X Romero",
+      phone_number: "+1-555",
+      user_type: "researcher",
+    };
+    const { client, insert } = buildEnsureProfileMock({
+      existing: userEditedRow,
+    });
+
+    const result = await ensureProfile(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      client as any,
+      buildAuthUser({
+        // user_metadata still says "Gerardo Romero" from sign-up time
+        profile: { full_name: "Gerardo Romero" },
+        name: "Gerardo Romero",
+      }),
+    );
+
+    expect(insert).not.toHaveBeenCalled();
+    expect(result.first_name).toBe("Jerry");
+    expect(result.last_name).toBe("Romero");
+    expect(result.display_name).toBe("Jerry X Romero");
+  });
+
+  it("falls back to null first/last when full_name is single-word", async () => {
+    const { client, insert } = buildEnsureProfileMock({ existing: null });
 
     await ensureProfile(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -93,13 +148,13 @@ describe("ensureProfile", () => {
       }),
     );
 
-    const payload = upsert.mock.calls[0][0];
+    const payload = insert.mock.calls[0][0];
     expect(payload.first_name).toBe("Madonna");
     expect(payload.last_name).toBeNull();
   });
 
   it("seeds first/last as null when no full_name on the user metadata", async () => {
-    const { client, upsert } = buildProfileMockWithUpsert({});
+    const { client, insert } = buildEnsureProfileMock({ existing: null });
 
     await ensureProfile(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -107,27 +162,39 @@ describe("ensureProfile", () => {
       buildAuthUser({ profile: {}, name: undefined }),
     );
 
-    const payload = upsert.mock.calls[0][0];
+    const payload = insert.mock.calls[0][0];
     expect(payload.first_name).toBeNull();
     expect(payload.last_name).toBeNull();
     expect(payload.avatar_url).toBeNull();
   });
 
-  it("propagates upstream errors", async () => {
-    const single = vi
-      .fn()
-      .mockResolvedValue({ data: null, error: new Error("rls denied") });
-    const select = vi.fn(() => ({ single }));
-    const upsert = vi.fn(() => ({ select }));
-    const from = vi.fn(() => ({ upsert }));
+  it("propagates select errors", async () => {
+    const { client } = buildEnsureProfileMock({
+      selectError: new Error("rls denied"),
+    });
 
     await expect(
       ensureProfile(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        { from } as any,
+        client as any,
         buildAuthUser(),
       ),
     ).rejects.toThrow(/rls denied/i);
+  });
+
+  it("propagates insert errors", async () => {
+    const { client } = buildEnsureProfileMock({
+      existing: null,
+      insertError: new Error("unique violation"),
+    });
+
+    await expect(
+      ensureProfile(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        client as any,
+        buildAuthUser(),
+      ),
+    ).rejects.toThrow(/unique violation/i);
   });
 });
 

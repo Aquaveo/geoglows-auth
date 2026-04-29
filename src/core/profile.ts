@@ -7,12 +7,12 @@ import type {
 /**
  * Ensures a `profiles` row exists for the given authenticated user.
  *
- * On insert, populates `id`, `email`, `display_name`, and any name /
- * avatar fields the auth provider supplied via `user_metadata`. On
- * conflict (existing row), updates **only** `email` and `avatar_url` —
- * fields that can legitimately change at the auth provider — and never
- * overwrites user-edited fields like `first_name`, `last_name`,
- * `phone_number`, etc.
+ * If the row already exists, returns it unchanged — `user_metadata`
+ * (full_name, avatar_url) is auth-time identity, not the profile of
+ * record, and must never overwrite values the user has edited via
+ * `updateProfile`. If the row is absent, inserts it and seeds the
+ * provider-supplied fields as initial values the user can later
+ * correct on the profile page.
  *
  * Provider-agnostic: works identically for users sourced from Cognito
  * (`AuthUser.sub` = Cognito sub UUID) and Supabase Auth
@@ -23,6 +23,15 @@ export async function ensureProfile(
   supabase: GeoglowsSupabaseClient,
   user: AuthUser,
 ): Promise<Profile> {
+  const { data: existing, error: selectError } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", user.sub)
+    .maybeSingle();
+
+  if (selectError) throw selectError;
+  if (existing) return existing as Profile;
+
   const metadata = user.profile ?? {};
   const fullName =
     typeof metadata.full_name === "string" ? metadata.full_name.trim() : "";
@@ -30,9 +39,7 @@ export async function ensureProfile(
     typeof metadata.avatar_url === "string" ? metadata.avatar_url : null;
 
   // Best-effort split of provider-supplied full name. Unreliable in
-  // general, but useful as an initial value the user can correct on
-  // their profile page. We never overwrite an existing first/last on
-  // conflict, so a wrong split here only affects new rows.
+  // general, but useful as an initial value for new rows only.
   const nameParts = fullName.split(/\s+/).filter(Boolean);
   const firstFromOauth = nameParts[0] ?? null;
   const lastFromOauth = nameParts.length > 1 ? nameParts[nameParts.length - 1] : null;
@@ -46,29 +53,13 @@ export async function ensureProfile(
     avatar_url: avatarUrl,
   };
 
-  // Upsert path: insert if row absent; on conflict update only the
-  // provider-authoritative fields (email, avatar_url, display_name).
-  // Structured names and the rest of the user-editable surface stay as
-  // the user has set them.
   const { data, error } = await supabase
     .from("profiles")
-    .upsert(insertPayload, {
-      onConflict: "id",
-      ignoreDuplicates: false,
-    })
+    .insert(insertPayload)
     .select()
     .single();
 
   if (error) throw error;
-
-  // The upsert above writes display_name on every call which is the
-  // wrong behavior on conflict — display_name should follow first/last
-  // once the user has set them. The cleaner fix would be split insert
-  // vs update calls, but Supabase v2's upsert API doesn't expose
-  // per-column on-conflict targets. We accept the small re-write of
-  // display_name; it's regenerated from user.name (the OAuth full
-  // name) which is stable across sessions.
-
   return data as Profile;
 }
 
