@@ -1,2 +1,2 @@
-export { useAuth, useOrg } from "./AuthProvider";
+export { useAuth } from "./AuthProvider";
 export { useSupabase } from "./SupabaseProvider";

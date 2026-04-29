@@ -359,6 +359,71 @@ If you relied on the visible error text for product-specific UX
 `"not confirmed"`), branch on the `Error` instance you receive in
 `onError` instead, then drive your UI from that.
 
+## What's new in `0.3.0`
+
+`0.3.0` adds rich user-profile support and removes the abandoned
+organization surface.
+
+### Added
+
+- **`Profile` interface gains optional fields**: `first_name`,
+  `middle_name`, `last_name`, `phone_number`, `user_type`, `address`,
+  `user_link`, `avatar_url`. All optional; consumer apps decide
+  which to expose / require.
+- **`UserType`** string-union type matching the project's expected
+  Postgres enum values (`researcher`, `student`, `agency_staff`,
+  `industry_professional`, `public`, `other`).
+- **`updateProfile(supabase, profile)`** — explicit user-driven
+  profile UPDATE for use from a profile-edit form. Synthesizes
+  `display_name` from first/middle/last when those are touched.
+  Respects the `profiles_update_own` RLS policy.
+- **`isProfileComplete(profile)`** — boolean predicate, true when
+  the profile has non-empty `first_name` and `last_name`. Used to
+  drive the completion banner.
+- **`<ProfileSetupForm>`** — React component for the post-sign-up
+  profile-completion flow.
+- **`<ProfileEditForm>`** — React component for editing an existing
+  profile. Disables Save until something has actually changed.
+- **`<ProfileCompletionBanner>`** — soft, dismissible banner that
+  renders when the user's profile has missing required fields.
+- **`<ProfileFields>` (internal)** — shared field markup used by
+  both forms; exported so consumers can compose a custom layout
+  using the same controlled inputs.
+
+### Behavior change: `ensureProfile` is hardened
+
+`ensureProfile` now seeds `first_name` and `last_name` from
+`user_metadata.full_name` (best-effort split) on insert, and
+**never overwrites** user-edited fields on conflict. Only `email`,
+`display_name`, and `avatar_url` (the provider-authoritative fields)
+update on subsequent calls.
+
+If you depended on `ensureProfile` overwriting fields, adopt
+`updateProfile` instead.
+
+### Removed (breaking)
+
+The organization surface is dropped:
+
+- **Removed types**: `Organization`, `OrgMembership`, `OrgRole`.
+- **Removed core helpers**: `loadOrganizations`, `createOrganization`,
+  `selectActiveOrg`, `getActiveOrgId`, `setActiveOrgId`,
+  `clearActiveOrgId`.
+- **Removed React surface**: `<OrgSelector>`, `<OrgSettings>`,
+  `<SidebarUserMenu>`, `<SidebarOrgBadge>`, the `useOrg` hook.
+- **`AuthContextValue` shrunk**: no more `memberships`,
+  `organizations`, `activeOrgId`, `activeOrg`, `activeRole`,
+  `setActiveOrgId`. Just `{ user, profile, loading, refresh,
+  signIn, signOut }`.
+- **`AccountSummary` shrunk**: just `{ profile }`.
+
+The Supabase project schema migration that pairs with this version
+also drops the `organizations` and `org_memberships` tables.
+
+If you need the organization concept back, a future version will
+re-introduce it with a fresh design. For now, fork or pin to
+`^0.2.0` if your app still uses the org surface.
+
 ## FAQ
 
 ### Can I instantiate both adapters in the same app?

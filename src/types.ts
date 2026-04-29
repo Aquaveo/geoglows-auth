@@ -1,30 +1,30 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export type OrgRole = "admin" | "viewer";
+/**
+ * The set of allowed values for `Profile.user_type`. Mirrors the
+ * `public.user_type` enum on the Supabase project.
+ */
+export type UserType =
+  | "researcher"
+  | "student"
+  | "agency_staff"
+  | "industry_professional"
+  | "public"
+  | "other";
 
 export interface Profile {
   id: string;
   email: string;
   display_name: string | null;
+  first_name?: string | null;
+  middle_name?: string | null;
+  last_name?: string | null;
+  phone_number?: string | null;
+  user_type?: UserType | null;
+  address?: string | null;
+  user_link?: string | null;
+  avatar_url?: string | null;
   created_at?: string;
-}
-
-export interface Organization {
-  id: string;
-  name: string;
-  slug: string;
-  created_by?: string | null;
-  created_at?: string;
-}
-
-export interface OrgMembership {
-  id: string;
-  org_id: string;
-  user_id: string;
-  role: OrgRole;
-  invited_at?: string | null;
-  accepted_at?: string | null;
-  organization?: Organization;
 }
 
 export interface AuthUser {
@@ -95,14 +95,8 @@ export interface SupabaseFactoryOptions {
 export interface AuthContextValue {
   user: AuthUser | null;
   profile: Profile | null;
-  memberships: OrgMembership[];
-  organizations: Organization[];
-  activeOrgId: string | null;
-  activeOrg: Organization | null;
-  activeRole: OrgRole | null;
   loading: boolean;
   refresh(): Promise<void>;
-  setActiveOrgId(orgId: string | null): void;
   signIn(): Promise<void>;
   signOut(): Promise<void>;
 }
