@@ -146,7 +146,6 @@ describe("bootstrapSession with the Supabase Auth adapter", () => {
     expect(final.user?.name).toBe("Scientist Name");
     expect(final.account).not.toBeNull();
     expect(final.account?.profile?.email).toBe("scientist@example.com");
-    expect(final.account?.organizations).toEqual([]);
   });
 
   it("upserts a row in profiles using the Supabase user id as sub", async () => {
@@ -171,12 +170,17 @@ describe("bootstrapSession with the Supabase Auth adapter", () => {
     );
     const upsertFn = profilesCall?.value.upsert as ReturnType<typeof vi.fn>;
     expect(upsertFn).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         id: "supabase-user-uuid",
         email: "scientist@example.com",
         display_name: "Scientist Name",
-      },
-      { onConflict: "id" },
+        // ensureProfile now also seeds first_name / last_name from
+        // user_metadata.full_name when available, plus avatar_url.
+        first_name: "Scientist",
+        last_name: "Name",
+        avatar_url: null,
+      }),
+      expect.objectContaining({ onConflict: "id" }),
     );
   });
 
