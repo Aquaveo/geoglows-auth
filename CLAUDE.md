@@ -1,0 +1,57 @@
+# @aquaveo/geoglows-auth
+
+## Project Overview
+- TypeScript 5.9 npm library, published to npm as `@aquaveo/geoglows-auth`
+- Provider-agnostic auth abstraction for GEOGloWS portals: same `AuthAdapter` interface backed by either AWS Cognito (OIDC) or Supabase Auth
+- Two consumer surfaces: `core` (vanilla JS / TS) and `react` (React 19 hooks + components). Apps choose one
+- Built with Vite library mode, TypeScript declarations emitted to `dist/types/`
+
+## Architecture
+- **AuthAdapter seam** (`src/types.ts`): single interface — `getCurrentUser`, `completeSignInIfNeeded`, `signInRedirect`, `signOutRedirect`, etc. Two implementations: `createOidcAuthAdapter` (Cognito, `oidc-client-ts`) and `createSupabaseAuthAdapter` (Supabase Auth). Consumers depend on the interface; the rest of the library never branches on which adapter is active
+- **Session bootstrap orchestration** (`src/core/session.ts`): `bootstrapSession` walks the auth lifecycle — completes any pending sign-in callback, fetches the current user, ensures a `profiles` row, loads the account summary. Adapter-agnostic
+- **Profile lifecycle** (`src/core/profile.ts`): `ensureProfile` is select-then-insert (NOT upsert) — if the row exists, it's returned untouched. `user_metadata` only seeds the row on first creation. See `docs/solutions/logic-errors/ensureprofile-upsert-overwrites-user-edits-2026-04-29.md` and `docs/solutions/best-practices/user-metadata-is-auth-identity-not-profile-of-record-2026-04-29.md`
+- **React surface** (`src/react/`): `<SupabaseProvider>` + `<AuthProvider>` (auto-bootstraps session in `useEffect`); `useAuth()` exposes `{ user, profile, loading, refresh, signIn, signOut }`. UI components: `<SupabaseAuthUI>` (sign-in form), `<UserMenu>`, `<ProfileSetupForm>`, `<ProfileEditForm>`, `<ProfileCompletionBanner>`
+
+## Key Files
+- `src/types.ts` — `AuthUser`, `AuthAdapter`, `Profile`, `UserType` enum, `AccountSummary` (currently `{ profile }`)
+- `src/core/index.ts` — barrel for the `core` entry point
+- `src/core/cognito.ts` — `createOidcAuthAdapter` (Cognito OIDC implementation, `oidc-client-ts`)
+- `src/core/supabase-auth.ts` — `createSupabaseAuthAdapter` (Supabase Auth implementation)
+- `src/core/supabase.ts` — `createGeoglowsSupabaseClient` factory; the `useIdToken` flag was removed in 0.2.0 (Cognito sessions are no longer forwarded as bearer tokens to PostgREST — Supabase Auth uses its own access token)
+- `src/core/session.ts` — `bootstrapSession`, `getUserDisplayInfo`, `SessionStatus`/`SessionState`
+- `src/core/profile.ts` — `ensureProfile` (select-then-insert), `updateProfile`, `isProfileComplete`
+- `src/core/account.ts` — `loadAccountSummary`
+- `src/react/AuthProvider.tsx` — auto-bootstrap, `useAuth()` hook
+- `src/react/SupabaseAuthUI.tsx` — sign-in form (password + magic-link + OAuth buttons)
+- `tests/core/`, `tests/react/` — vitest + jsdom + Testing Library; mock the supabase client per-test, never the lib's own internals
+- `docs/adapters.md` — adapter contracts (`AuthAdapter` interface, expected return shapes); the canonical reference for what an implementation must satisfy
+
+## Conventions
+- TypeScript strict mode; no `any` outside test mock typing escape hatches
+- `Profile` interface is the source of truth for the `profiles` table shape; UI components compose against this type
+- The `display_name` column is computed from name parts (`first_name + middle_name + last_name`) by `updateProfile` and used as the navbar fallback. It is NOT user-editable directly
+- `user_metadata` is auth-time identity, NOT the profile of record. See `docs/solutions/best-practices/user-metadata-is-auth-identity-not-profile-of-record-2026-04-29.md`
+- Tests assert observable behavior, not call shape — for write paths, seed a row first and assert that the row state is correct after the function runs (see the `ensureProfile` regression test added in 0.3.1)
+
+## Commands
+- `npm run build` — clean `dist/`, emit TS declarations, build ESM + CJS bundles via Vite library mode
+- `npm test` — run vitest suite under jsdom
+- `npm run test:watch` — vitest in watch mode
+- `npm run lint` — eslint over `.ts` / `.tsx`
+- `npm run dev` — vite dev server (rarely used; this is a library)
+
+## Publishing
+- npm publish requires Aquaveo org membership + 2FA OTP
+- Version bump in `package.json`; commit; merge to `main`; `npm publish`; tag `v<version>`; push tags
+- `dist/` is generated at publish time (gitignored). The `files: ["dist"]` field in package.json scopes what ships
+
+## Documentation
+- `docs/plans/` — engineering plans (`YYYY-MM-DD-NNN-<type>-<descriptive-name>-plan.md`); progress-tracked living documents
+- `docs/solutions/` — captured learnings from past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas — grep here before reinventing
+- `docs/adapters.md` — `AuthAdapter` contract and adapter implementation requirements
+
+## Consumers
+- `apps.geoglows` (vanilla JS, uses `core` surface, currently on Supabase Auth)
+- `aquiferx` (React, uses `react` surface, currently on Cognito)
+
+Both adapters remain shipped — the library is dual-mode by design. The product direction (per `apps.geoglows/docs/plans/2026-04-28-002-refactor-cognito-to-supabase-auth-plan.md`) is consolidation on Supabase Auth, but consumers migrate at their own pace
