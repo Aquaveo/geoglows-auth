@@ -202,5 +202,27 @@ export function createSupabaseAuthAdapter(
       });
       if (error) throw error;
     },
+
+    async resetPasswordForEmail({ email, redirectTo }) {
+      const target = redirectTo ?? config.defaultRedirectTo;
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        email,
+        target ? { redirectTo: target } : {},
+      );
+      if (error) throw error;
+    },
+
+    async updateUserPassword({ password }) {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+    },
+
+    async signOutOtherSessions() {
+      // scope: "others" is load-bearing — calling supabase.auth.signOut() with
+      // no args would sign out the CURRENT session too, destroying the
+      // recovery session immediately after the password update completes.
+      const { error } = await supabase.auth.signOut({ scope: "others" });
+      if (error) throw error;
+    },
   };
 }

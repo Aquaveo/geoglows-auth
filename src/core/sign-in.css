@@ -419,3 +419,33 @@
 [data-theme="dark"] .geoglows-auth-action-menu-signout:hover:not(:disabled) {
   background: rgba(127, 29, 29, 0.2);
 }
+
+/* ─── Forgot-password / recovery views (1.2.0) ─────────────────────────── */
+
+/* "Forgot password?" link below the password field — small, right-aligned,
+   muted color so it doesn't compete with the submit button. */
+.geoglows-signin-forgot-row {
+  margin: 0;
+  text-align: right;
+}
+.geoglows-signin-forgot-link {
+  font-size: 13px;
+  padding: 0;
+}
+
+/* Inline success message (e.g. "We've signed you out on other devices"). */
+.geoglows-signin-success {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+[data-theme="dark"] .geoglows-signin-success {
+  color: #86efac;
+  background: rgba(20, 83, 45, 0.2);
+  border-color: rgba(20, 83, 45, 0.5);
+}
+

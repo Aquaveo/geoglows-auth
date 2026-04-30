@@ -1,4 +1,4 @@
-import type { SupabaseAuthAdapter } from "../types";
+import type { AuthUser, SupabaseAuthAdapter } from "../types";
 import { escapeHtml } from "./escape";
 // Side-effect import so Vite's library build emits sign-in.css alongside
 // the JS bundle. Consumers also get a stable subpath at
@@ -7,8 +7,9 @@ import "./sign-in.css";
 
 export interface SignInModalOptions {
   /**
-   * Adapter providing `signInWithPassword`, `signInWithOAuth`, and
-   * `signUpWithPassword`. Created via `createSupabaseAuthAdapter({ supabase })`.
+   * Adapter providing `signInWithPassword`, `signInWithOAuth`,
+   * `signUpWithPassword`, `resetPasswordForEmail`, `updateUserPassword`,
+   * and `signOutOtherSessions`. Created via `createSupabaseAuthAdapter({ supabase })`.
    */
   authAdapter: SupabaseAuthAdapter;
   /**
@@ -18,10 +19,11 @@ export interface SignInModalOptions {
    */
   allowSignUp?: boolean;
   /**
-   * Called after successful password sign-in. OAuth flows redirect away, so
-   * this callback is not invoked for them. Errors thrown from this callback
-   * are isolated from the modal's own error handling — they will be logged
-   * but will not surface as a "Sign-in failed" message.
+   * Called after successful password sign-in OR successful password recovery
+   * (post-`updateUserPassword`). OAuth flows redirect away, so this callback
+   * is not invoked for them. Errors thrown from this callback are isolated
+   * from the modal's own error handling — they will be logged but will not
+   * surface as a "Sign-in failed" message.
    */
   onSignedIn?: () => void;
   /**
@@ -31,15 +33,34 @@ export interface SignInModalOptions {
    */
   oauthRedirectTo?: string;
   /**
-   * Where the email-confirmation link redirects to (for sign-up). Defaults to
-   * `window.location.origin`. Must be on the allowlist.
+   * Where the email-confirmation link (sign-up) AND the password-recovery
+   * link redirect to. Defaults to `window.location.origin`. Must be on
+   * the allowlist.
    */
   emailRedirectTo?: string;
 }
 
+/** View the modal can open in. Default is `"signIn"` (matches prior behavior). */
+export type SignInModalView =
+  | "signIn"
+  | "forgotPassword"
+  | "setNewPassword"
+  | "recoveryError";
+
+export interface OpenOptions {
+  /** Which view to render on open. Default `"signIn"`. */
+  view?: SignInModalView;
+}
+
 export interface SignInModalHandle {
-  /** Show the modal. Idempotent. Throws if the handle has been unmounted. */
-  open(): void;
+  /**
+   * Show the modal. Idempotent. Throws if the handle has been unmounted.
+   * Pass `{ view: "setNewPassword" }` from a `PASSWORD_RECOVERY` event
+   * handler, `{ view: "recoveryError" }` when the URL hash carries
+   * `error_code=otp_expired`, or `{ view: "forgotPassword" }` to skip
+   * straight to the recovery-request form.
+   */
+  open(options?: OpenOptions): void;
   /**
    * Close the modal and reset to a fresh sign-in state. Idempotent. Cancels
    * any in-flight submit so its resolution does not fire `onSignedIn`.
@@ -59,27 +80,68 @@ const GENERIC_SIGNUP_ERROR =
   "We couldn't create your account. Please try again.";
 const GENERIC_OAUTH_ERROR =
   "We couldn't start the sign-in flow. Please try again.";
+const GENERIC_RESET_ERROR =
+  "We couldn't send the reset link. Please try again.";
+const GENERIC_UPDATE_PASSWORD_ERROR =
+  "We couldn't update your password. Please try again.";
+const SUCCESS_PASSWORD_UPDATED =
+  "Password updated. We've signed you out on other devices for safety.";
+const SUCCESS_LINGER_MS = 1500;
 
-type ModalView = "signIn" | "signUp" | "signUpSent";
+type ModalView =
+  | "signIn"
+  | "signUp"
+  | "signUpSent"
+  | "forgotPassword"
+  | "forgotPasswordSent"
+  | "setNewPassword"
+  | "recoveryError";
 
 interface ModalState {
   view: ModalView;
   error: string | null;
   pending: boolean;
+  /**
+   * Inline success message shown briefly before close (e.g. "We've signed
+   * you out on other devices…"). Distinct from `error` so the styling and
+   * role differ.
+   */
+  successMessage: string | null;
   /** Retained across re-renders so validation errors don't wipe typed input. */
   email: string;
   firstName: string;
   lastName: string;
+  /**
+   * Email of the recovery-target user, fetched via authAdapter.getCurrentUser()
+   * when entering setNewPassword view. Renders in the header so the user sees
+   * which account they're resetting (Q5 — prevents silent identity swap).
+   */
+  recoveryEmail: string | null;
 }
 
 const INITIAL_STATE: ModalState = {
   view: "signIn",
   error: null,
   pending: false,
+  successMessage: null,
   email: "",
   firstName: "",
   lastName: "",
+  recoveryEmail: null,
 };
+
+function isAuthExpiredError(err: unknown): boolean {
+  // Distinguish recovery-session-expired from validation errors. Supabase
+  // surfaces session/auth issues with these codes/strings.
+  if (!(err instanceof Error)) return false;
+  const code = (err as { code?: string }).code ?? "";
+  const msg = err.message.toLowerCase();
+  return (
+    code === "refresh_token_not_found" ||
+    code === "session_not_found" ||
+    /refresh token|session.*expired|invalid.*token|jwt expired/.test(msg)
+  );
+}
 
 /**
  * Mounts a vanilla `<dialog>`-based sign-in modal. Returns a handle for
@@ -94,6 +156,9 @@ const INITIAL_STATE: ModalState = {
  *
  * const modal = mountSignInModal({ authAdapter });
  * document.querySelector("#geoglowsSignIn")?.addEventListener("click", () => modal.open());
+ *
+ * // Recovery: in your supabase.auth.onAuthStateChange handler:
+ * if (event === "PASSWORD_RECOVERY") modal.open({ view: "setNewPassword" });
  * ```
  */
 export function mountSignInModal(
@@ -132,7 +197,11 @@ export function mountSignInModal(
     ModalState,
     "email" | "firstName" | "lastName"
   > {
-    const form = dialog.querySelector("#geoglowsSignInForm");
+    // Sign-in/sign-up form lives at #geoglowsSignInForm; forgot-password form
+    // lives at #geoglowsSignInForgotForm. Read whichever exists.
+    const form =
+      dialog.querySelector("#geoglowsSignInForm") ??
+      dialog.querySelector("#geoglowsSignInForgotForm");
     if (!(form instanceof HTMLFormElement)) {
       return {
         email: state.email,
@@ -157,6 +226,16 @@ export function mountSignInModal(
     dialog.innerHTML = renderBody(state, allowSignUp);
     bindEvents();
     dialog.scrollTop = scrollTop;
+    focusFirstField();
+  }
+
+  function focusFirstField(): void {
+    // First interactive field per view — keyboard users land at the right
+    // element on every transition.
+    const firstInput = dialog.querySelector<HTMLElement>(
+      'input:not([type="hidden"]):not([disabled])',
+    );
+    firstInput?.focus();
   }
 
   function close(): void {
@@ -166,11 +245,30 @@ export function mountSignInModal(
     if (dialog.open) dialog.close();
   }
 
-  function open(): void {
+  function open(openOptions?: OpenOptions): void {
     assertMounted();
     if (dialog.open) return;
-    setState({ ...INITIAL_STATE });
+    const view = openOptions?.view ?? "signIn";
+    setState({ ...INITIAL_STATE, view });
     dialog.showModal();
+
+    // For setNewPassword, asynchronously fetch the recovery user's email so
+    // the header can render "Resetting password for X" (Q5).
+    if (view === "setNewPassword") {
+      const epoch = requestEpoch;
+      authAdapter
+        .getCurrentUser()
+        .then((user: AuthUser | null) => {
+          if (epoch !== requestEpoch || unmounted) return;
+          setState({ recoveryEmail: user?.email ?? null });
+        })
+        .catch((err: unknown) => {
+          console.error(
+            "Recovery getCurrentUser failed:",
+            err instanceof Error ? err.message : String(err),
+          );
+        });
+    }
   }
 
   async function handleOAuth(provider: string): Promise<void> {
@@ -276,6 +374,108 @@ export function mountSignInModal(
     }
   }
 
+  async function handleForgotPasswordSubmit(
+    form: HTMLFormElement,
+  ): Promise<void> {
+    const emailInput = form.querySelector('input[name="email"]');
+    const email =
+      emailInput instanceof HTMLInputElement ? emailInput.value.trim() : "";
+
+    if (!email) {
+      setState({ error: "Please enter your email address.", email });
+      return;
+    }
+
+    const epoch = ++requestEpoch;
+    setState({ pending: true, error: null, email });
+
+    try {
+      await authAdapter.resetPasswordForEmail({
+        email,
+        redirectTo: emailRedirectTo ?? window.location.origin,
+      });
+      if (epoch !== requestEpoch || unmounted) return;
+      setState({ pending: false, error: null, view: "forgotPasswordSent" });
+    } catch (err) {
+      console.error(
+        "Password reset failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+      if (epoch !== requestEpoch || unmounted) return;
+      setState({ pending: false, error: GENERIC_RESET_ERROR, email });
+    }
+  }
+
+  async function handleSetNewPasswordSubmit(
+    form: HTMLFormElement,
+  ): Promise<void> {
+    const passwordInput = form.querySelector('input[name="password"]');
+    const password =
+      passwordInput instanceof HTMLInputElement ? passwordInput.value : "";
+
+    if (!password.trim()) {
+      setState({ error: "Please choose a new password." });
+      return;
+    }
+
+    const epoch = ++requestEpoch;
+    setState({ pending: true, error: null });
+
+    try {
+      await authAdapter.updateUserPassword({ password });
+      if (epoch !== requestEpoch || unmounted) return;
+
+      // Best-effort: invalidate other-device sessions. Failure is logged but
+      // does not block the success flow — password is already updated.
+      try {
+        await authAdapter.signOutOtherSessions();
+      } catch (sessionErr) {
+        console.error(
+          "signOutOtherSessions failed (best-effort):",
+          sessionErr instanceof Error ? sessionErr.message : String(sessionErr),
+        );
+      }
+      if (epoch !== requestEpoch || unmounted) return;
+
+      // Show the success message briefly so the user sees that we signed
+      // them out elsewhere, then close.
+      setState({
+        pending: false,
+        error: null,
+        successMessage: SUCCESS_PASSWORD_UPDATED,
+      });
+
+      setTimeout(() => {
+        if (epoch !== requestEpoch || unmounted) return;
+        close();
+        try {
+          onSignedIn?.();
+        } catch (callbackErr) {
+          console.error(
+            "onSignedIn callback threw:",
+            callbackErr instanceof Error
+              ? callbackErr.message
+              : String(callbackErr),
+          );
+        }
+      }, SUCCESS_LINGER_MS);
+    } catch (err) {
+      console.error(
+        "Password update failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+      if (epoch !== requestEpoch || unmounted) return;
+
+      // Distinguish auth-error (recovery session expired) from validation
+      // errors (e.g., password too weak).
+      if (isAuthExpiredError(err)) {
+        setState({ pending: false, error: null, view: "recoveryError" });
+      } else {
+        setState({ pending: false, error: GENERIC_UPDATE_PASSWORD_ERROR });
+      }
+    }
+  }
+
   function bindEvents(): void {
     dialog
       .querySelector<HTMLButtonElement>("#geoglowsSignInClose")
@@ -319,6 +519,64 @@ export function mountSignInModal(
       .querySelector<HTMLButtonElement>("#geoglowsSignInBackToForm")
       ?.addEventListener("click", () => {
         setState({ view: "signIn", error: null });
+      });
+
+    // Forgot-password entry from signIn view.
+    dialog
+      .querySelector<HTMLButtonElement>("#geoglowsSignInForgotLink")
+      ?.addEventListener("click", () => {
+        const captured = captureFormValues();
+        setState({ view: "forgotPassword", error: null, ...captured });
+      });
+
+    // forgotPassword view — submit + back.
+    dialog
+      .querySelector<HTMLFormElement>("#geoglowsSignInForgotForm")
+      ?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const formEl = e.currentTarget;
+        if (formEl instanceof HTMLFormElement) {
+          void handleForgotPasswordSubmit(formEl);
+        }
+      });
+
+    dialog
+      .querySelector<HTMLButtonElement>("#geoglowsSignInForgotBack")
+      ?.addEventListener("click", () => {
+        const captured = captureFormValues();
+        setState({ view: "signIn", error: null, ...captured });
+      });
+
+    // setNewPassword view — submit + back.
+    dialog
+      .querySelector<HTMLFormElement>("#geoglowsSignInNewPasswordForm")
+      ?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const formEl = e.currentTarget;
+        if (formEl instanceof HTMLFormElement) {
+          void handleSetNewPasswordSubmit(formEl);
+        }
+      });
+
+    dialog
+      .querySelector<HTMLButtonElement>("#geoglowsSignInNewPasswordBack")
+      ?.addEventListener("click", () => {
+        // Clear the lingering recovery session so it doesn't persist
+        // unauthenticated as a different user — fire-and-forget.
+        void authAdapter.signOutRedirect().catch((err: unknown) => {
+          console.error(
+            "Recovery signOutRedirect failed:",
+            err instanceof Error ? err.message : String(err),
+          );
+        });
+        setState({ view: "signIn", error: null });
+      });
+
+    // recoveryError view — Send a new link CTA.
+    dialog
+      .querySelector<HTMLButtonElement>("#geoglowsSignInRecoveryErrorRetry")
+      ?.addEventListener("click", () => {
+        setState({ view: "forgotPassword", error: null });
       });
   }
 
@@ -400,6 +658,200 @@ function renderBody(state: ModalState, allowSignUp: boolean): string {
     `;
   }
 
+  if (state.view === "forgotPasswordSent") {
+    return `
+      <div class="geoglows-signin-confirmation">
+        <h2 class="geoglows-signin-title">Check your email</h2>
+        <p class="geoglows-signin-confirmation-text">
+          We sent a link to reset your password. Click the link in the email
+          to choose a new password.
+        </p>
+        <button
+          type="button"
+          id="geoglowsSignInBackToForm"
+          class="geoglows-signin-confirmation-back"
+        >
+          Back to sign in
+        </button>
+      </div>
+    `;
+  }
+
+  if (state.view === "forgotPassword") {
+    return renderForgotPassword(state);
+  }
+
+  if (state.view === "setNewPassword") {
+    return renderSetNewPassword(state);
+  }
+
+  if (state.view === "recoveryError") {
+    return renderRecoveryError();
+  }
+
+  return renderSignInOrSignUp(state, allowSignUp);
+}
+
+function renderForgotPassword(state: ModalState): string {
+  const errorBlock = state.error
+    ? `<p role="alert" aria-live="polite" class="geoglows-signin-error">${escapeHtml(state.error)}</p>`
+    : "";
+
+  return `
+    <div class="geoglows-signin-content">
+      <div class="geoglows-signin-header">
+        <h2 class="geoglows-signin-title">Reset your password</h2>
+        <button
+          type="button"
+          id="geoglowsSignInClose"
+          aria-label="Close"
+          class="geoglows-signin-close"
+        >&times;</button>
+      </div>
+
+      <p class="geoglows-signin-confirmation-text">
+        Enter the email for your account. We'll send you a link to reset your password.
+      </p>
+
+      ${errorBlock}
+
+      <form id="geoglowsSignInForgotForm" novalidate class="geoglows-signin-form">
+        <div class="geoglows-signin-field">
+          <label for="geoglowsSignInForgotEmail" class="geoglows-signin-label">Email</label>
+          <input
+            id="geoglowsSignInForgotEmail"
+            name="email"
+            type="email"
+            autocomplete="email"
+            class="geoglows-signin-input"
+            value="${escapeHtml(state.email)}"
+            ${state.pending ? "disabled" : ""}
+            required
+          />
+        </div>
+        <button
+          type="submit"
+          class="geoglows-signin-submit"
+          ${state.pending ? "disabled" : ""}
+        >
+          ${state.pending ? "Sending…" : "Send reset link"}
+        </button>
+      </form>
+
+      <p class="geoglows-signin-toggle-text">
+        <button
+          type="button"
+          id="geoglowsSignInForgotBack"
+          class="geoglows-signin-toggle-button"
+          ${state.pending ? "disabled" : ""}
+        >Back to sign in</button>
+      </p>
+    </div>
+  `;
+}
+
+function renderSetNewPassword(state: ModalState): string {
+  const errorBlock = state.error
+    ? `<p role="alert" aria-live="polite" class="geoglows-signin-error">${escapeHtml(state.error)}</p>`
+    : "";
+
+  const successBlock = state.successMessage
+    ? `<p role="status" aria-live="polite" class="geoglows-signin-success">${escapeHtml(state.successMessage)}</p>`
+    : "";
+
+  // Q5: header surfaces which account is being reset, so a user on a
+  // shared/borrowed browser notices an identity swap before submitting.
+  const recoveryHeader = state.recoveryEmail
+    ? `<p class="geoglows-signin-confirmation-text">
+        Resetting password for <strong>${escapeHtml(state.recoveryEmail)}</strong>.
+      </p>`
+    : "";
+
+  return `
+    <div class="geoglows-signin-content">
+      <div class="geoglows-signin-header">
+        <h2 class="geoglows-signin-title">Choose a new password</h2>
+        <button
+          type="button"
+          id="geoglowsSignInClose"
+          aria-label="Close"
+          class="geoglows-signin-close"
+        >&times;</button>
+      </div>
+
+      ${recoveryHeader}
+      ${errorBlock}
+      ${successBlock}
+
+      <form id="geoglowsSignInNewPasswordForm" novalidate class="geoglows-signin-form">
+        <div class="geoglows-signin-field">
+          <label for="geoglowsSignInNewPassword" class="geoglows-signin-label">New password</label>
+          <input
+            id="geoglowsSignInNewPassword"
+            name="password"
+            type="password"
+            autocomplete="new-password"
+            class="geoglows-signin-input"
+            ${state.pending ? "disabled" : ""}
+            required
+          />
+        </div>
+        <button
+          type="submit"
+          class="geoglows-signin-submit"
+          ${state.pending ? "disabled" : ""}
+        >
+          ${state.pending ? "Updating…" : "Set new password"}
+        </button>
+      </form>
+
+      <p class="geoglows-signin-toggle-text">
+        <button
+          type="button"
+          id="geoglowsSignInNewPasswordBack"
+          class="geoglows-signin-toggle-button"
+          ${state.pending ? "disabled" : ""}
+        >Back to sign in</button>
+      </p>
+    </div>
+  `;
+}
+
+function renderRecoveryError(): string {
+  // Q1: corporate-gateway hint + mailto fallback for users whose email
+  // security gateway pre-fetches the link and consumes the token.
+  return `
+    <div class="geoglows-signin-content">
+      <div class="geoglows-signin-header">
+        <h2 class="geoglows-signin-title">This recovery link expired</h2>
+        <button
+          type="button"
+          id="geoglowsSignInClose"
+          aria-label="Close"
+          class="geoglows-signin-close"
+        >&times;</button>
+      </div>
+
+      <p class="geoglows-signin-confirmation-text">
+        This recovery link has already been used or has expired. If your email
+        is from a corporate or government domain, your IT system may have
+        pre-fetched the link before you clicked it. You can
+        <a href="mailto:gromero@aquaveo.com" class="geoglows-signin-toggle-button">contact support for manual recovery</a>
+        or click below to request a new link.
+      </p>
+
+      <button
+        type="button"
+        id="geoglowsSignInRecoveryErrorRetry"
+        class="geoglows-signin-submit"
+      >
+        Send a new link
+      </button>
+    </div>
+  `;
+}
+
+function renderSignInOrSignUp(state: ModalState, allowSignUp: boolean): string {
   const isSignUp = state.view === "signUp";
   const errorBlock = state.error
     ? `<p role="alert" aria-live="polite" class="geoglows-signin-error">${escapeHtml(state.error)}</p>`
@@ -435,6 +887,21 @@ function renderBody(state: ModalState, allowSignUp: boolean): string {
           />
         </div>
       </div>
+    `
+    : "";
+
+  // Forgot-password link, signIn view only. Always rendered regardless of
+  // allowSignUp (recovery is independent of sign-up availability).
+  const forgotLink = !isSignUp
+    ? `
+      <p class="geoglows-signin-toggle-text geoglows-signin-forgot-row">
+        <button
+          type="button"
+          id="geoglowsSignInForgotLink"
+          class="geoglows-signin-toggle-button geoglows-signin-forgot-link"
+          ${state.pending ? "disabled" : ""}
+        >Forgot password?</button>
+      </p>
     `
     : "";
 
@@ -523,6 +990,7 @@ function renderBody(state: ModalState, allowSignUp: boolean): string {
             required
           />
         </div>
+        ${forgotLink}
         <button
           type="submit"
           class="geoglows-signin-submit"
