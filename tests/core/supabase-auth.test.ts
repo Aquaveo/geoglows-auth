@@ -7,6 +7,9 @@ interface MockAuth {
   signInWithPassword: ReturnType<typeof vi.fn>;
   signInWithOtp: ReturnType<typeof vi.fn>;
   signInWithOAuth: ReturnType<typeof vi.fn>;
+  signUp: ReturnType<typeof vi.fn>;
+  resetPasswordForEmail: ReturnType<typeof vi.fn>;
+  updateUser: ReturnType<typeof vi.fn>;
   exchangeCodeForSession: ReturnType<typeof vi.fn>;
   signOut: ReturnType<typeof vi.fn>;
   onAuthStateChange: ReturnType<typeof vi.fn>;
@@ -42,6 +45,9 @@ function buildMockClient(): MockClient {
       signInWithPassword: vi.fn(),
       signInWithOtp: vi.fn(),
       signInWithOAuth: vi.fn(),
+      signUp: vi.fn(),
+      resetPasswordForEmail: vi.fn(),
+      updateUser: vi.fn(),
       exchangeCodeForSession: vi.fn(),
       signOut: vi.fn(),
       onAuthStateChange: vi.fn(),
@@ -315,6 +321,110 @@ describe("createSupabaseAuthAdapter", () => {
       adapter.setupTokenRenewal();
       adapter.setupTokenRenewal();
       expect(client.auth.onAuthStateChange).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("resetPasswordForEmail", () => {
+    it("calls supabase.auth.resetPasswordForEmail with configured defaultRedirectTo", async () => {
+      adapter = createSupabaseAuthAdapter({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        supabase: client as any,
+        defaultRedirectTo: "http://localhost/auth/callback",
+      });
+      client.auth.resetPasswordForEmail.mockResolvedValue({
+        data: {},
+        error: null,
+      });
+
+      await adapter.resetPasswordForEmail({ email: "user@example.com" });
+
+      expect(client.auth.resetPasswordForEmail).toHaveBeenCalledWith(
+        "user@example.com",
+        { redirectTo: "http://localhost/auth/callback" },
+      );
+    });
+
+    it("forwards an explicit redirectTo verbatim, ignoring the default", async () => {
+      adapter = createSupabaseAuthAdapter({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        supabase: client as any,
+        defaultRedirectTo: "http://localhost/default",
+      });
+      client.auth.resetPasswordForEmail.mockResolvedValue({
+        data: {},
+        error: null,
+      });
+
+      await adapter.resetPasswordForEmail({
+        email: "user@example.com",
+        redirectTo: "https://example.com/auth/recovery",
+      });
+
+      expect(client.auth.resetPasswordForEmail).toHaveBeenCalledWith(
+        "user@example.com",
+        { redirectTo: "https://example.com/auth/recovery" },
+      );
+    });
+
+    it("propagates errors from Supabase", async () => {
+      client.auth.resetPasswordForEmail.mockResolvedValue({
+        data: {},
+        error: new Error("Email rate limit exceeded"),
+      });
+
+      await expect(
+        adapter.resetPasswordForEmail({ email: "user@example.com" }),
+      ).rejects.toThrow(/rate limit/i);
+    });
+  });
+
+  describe("updateUserPassword", () => {
+    it("calls supabase.auth.updateUser with only the password attribute", async () => {
+      client.auth.updateUser.mockResolvedValue({
+        data: { user: buildSession().user },
+        error: null,
+      });
+
+      await adapter.updateUserPassword({ password: "new-strong-password" });
+
+      expect(client.auth.updateUser).toHaveBeenCalledWith({
+        password: "new-strong-password",
+      });
+    });
+
+    it("propagates errors from Supabase (e.g. password too weak, session expired)", async () => {
+      client.auth.updateUser.mockResolvedValue({
+        data: { user: null },
+        error: new Error("New password should be at least 6 characters"),
+      });
+
+      await expect(
+        adapter.updateUserPassword({ password: "x" }),
+      ).rejects.toThrow(/at least 6 characters/i);
+    });
+  });
+
+  describe("signOutOtherSessions", () => {
+    it("calls supabase.auth.signOut with scope: 'others' EXACTLY", async () => {
+      client.auth.signOut.mockResolvedValue({ error: null });
+
+      await adapter.signOutOtherSessions();
+
+      // Regression guard: must NOT call with no args (which would be a global
+      // sign-out of the current session — destroying the recovery session
+      // immediately after the password update).
+      expect(client.auth.signOut).toHaveBeenCalledWith({ scope: "others" });
+      expect(client.auth.signOut).not.toHaveBeenCalledWith();
+    });
+
+    it("propagates errors from Supabase (modal layer treats as best-effort)", async () => {
+      client.auth.signOut.mockResolvedValue({
+        error: new Error("network down"),
+      });
+
+      await expect(adapter.signOutOtherSessions()).rejects.toThrow(
+        /network down/i,
+      );
     });
   });
 });

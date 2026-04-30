@@ -91,11 +91,53 @@ export interface SignUpWithPasswordArgs {
   metadata?: Record<string, unknown>;
 }
 
+export interface ResetPasswordForEmailArgs {
+  email: string;
+  /**
+   * Where Supabase sends the user after they click the recovery email link.
+   * Must be on the project's Supabase Auth → Redirect URLs allowlist.
+   * Falls back to the adapter's `defaultRedirectTo` when omitted.
+   */
+  redirectTo?: string;
+}
+
+export interface UpdateUserPasswordArgs {
+  password: string;
+}
+
 export interface SupabaseAuthAdapter extends AuthAdapter {
   signInWithPassword(args: { email: string; password: string }): Promise<AuthUser>;
   signInWithMagicLink(args: { email: string; redirectTo?: string }): Promise<void>;
   signInWithOAuth(args: { provider: string; redirectTo?: string }): Promise<void>;
   signUpWithPassword(args: SignUpWithPasswordArgs): Promise<void>;
+  /**
+   * Sends a password-recovery email. The user receives a link that lands on
+   * `redirectTo` with `#access_token=…&type=recovery` (implicit flow). The
+   * consumer's `onAuthStateChange` listener catches the resulting
+   * `PASSWORD_RECOVERY` event and opens the modal in the new-password view.
+   *
+   * To preserve enumeration resistance, this method resolves successfully
+   * regardless of whether the email exists in the project — Supabase silently
+   * no-ops for unknown emails. Do NOT surface a "user not found" error.
+   */
+  resetPasswordForEmail(args: ResetPasswordForEmailArgs): Promise<void>;
+  /**
+   * Updates the currently-authenticated user's password. Used after the
+   * `PASSWORD_RECOVERY` event has put Supabase into a recovery session.
+   * Does NOT require an `email` argument — Supabase infers the user from
+   * the active session.
+   */
+  updateUserPassword(args: UpdateUserPasswordArgs): Promise<void>;
+  /**
+   * Signs out OTHER active sessions for the same user (other devices /
+   * other browsers), preserving the current browser's session. Used after
+   * a successful `updateUserPassword` to invalidate stale credentials.
+   *
+   * Distinct from `signOutRedirect()` — this targets `scope: "others"` and
+   * does NOT navigate. Failure is non-fatal at the modal layer (logged +
+   * ignored) since the password update has already succeeded.
+   */
+  signOutOtherSessions(): Promise<void>;
 }
 
 export interface SupabaseFactoryOptions {
