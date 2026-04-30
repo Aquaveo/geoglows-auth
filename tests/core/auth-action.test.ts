@@ -91,6 +91,56 @@ describe("renderAuthAction", () => {
     });
   });
 
+  describe("user takes precedence over loading status (rebootstrap defense)", () => {
+    // Supabase JS fires SIGNED_IN on every tab-focus session revalidation.
+    // If a consumer's onAuthStateChange responds by re-running bootstrapSession,
+    // the lib's transient "bootstrapping" / "loading_profile" / "loading_account"
+    // emits would normally null out user and account, causing the navbar to
+    // briefly show "Signing in…" before settling back to the avatar — a visible
+    // flicker. The render-layer guard: if user is set, prefer the avatar even
+    // during loading status. The lib's session.ts also accepts initialState now
+    // to avoid clearing user in the first place; this is defense in depth.
+    it("renders the avatar (not the loading pill) when status is bootstrapping but user is present", () => {
+      const html = renderAuthAction({
+        user: buildUser(),
+        account: { profile: buildProfile() },
+        status: "bootstrapping",
+      });
+      expect(html).toContain('id="geoglowsAuthActionAvatar"');
+      expect(html).not.toContain("geoglows-auth-action-loading");
+    });
+
+    it("renders the avatar when status is loading_profile but user is present", () => {
+      const html = renderAuthAction({
+        user: buildUser(),
+        account: { profile: buildProfile() },
+        status: "loading_profile",
+      });
+      expect(html).toContain('id="geoglowsAuthActionAvatar"');
+      expect(html).not.toContain("geoglows-auth-action-loading");
+    });
+
+    it("renders the avatar when status is loading_account but user is present", () => {
+      const html = renderAuthAction({
+        user: buildUser(),
+        account: { profile: buildProfile() },
+        status: "loading_account",
+      });
+      expect(html).toContain('id="geoglowsAuthActionAvatar"');
+      expect(html).not.toContain("geoglows-auth-action-loading");
+    });
+
+    it("renders the avatar even if account is null (e.g. mid-rebootstrap before account reloads)", () => {
+      const html = renderAuthAction({
+        user: buildUser(),
+        account: null,
+        status: "loading_account",
+      });
+      expect(html).toContain('id="geoglowsAuthActionAvatar"');
+      expect(html).not.toContain("geoglows-auth-action-loading");
+    });
+  });
+
   describe("signed-in state", () => {
     it("renders the avatar dropdown when user is present", () => {
       const html = renderAuthAction({

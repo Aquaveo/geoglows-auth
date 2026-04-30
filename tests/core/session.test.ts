@@ -260,6 +260,87 @@ describe("bootstrapSession with the Supabase Auth adapter", () => {
     expect(client.from).not.toHaveBeenCalled();
   });
 
+  it("preserves user and account across transient phases when initialState is provided", async () => {
+    // Models the rebootstrap scenario: Supabase fires SIGNED_IN on tab focus,
+    // consumer calls bootstrapSession again. With initialState, the lib must
+    // NOT briefly null out user/account during transient bootstrapping /
+    // loading_profile / loading_account emits — that flicker is the bug we
+    // are fixing.
+    client.auth.getSession.mockResolvedValue({
+      data: { session: buildSession() },
+      error: null,
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const adapter = createSupabaseAuthAdapter({ supabase: client as any });
+
+    // Simulate the "we are already signed in" baseline that a consumer would
+    // have in its appState before the rebootstrap fires.
+    const previousState: SessionState = {
+      status: "ready",
+      user: {
+        sub: "supabase-user-uuid",
+        email: "scientist@example.com",
+        name: "Scientist Name",
+        expired: false,
+        profile: {},
+      },
+      account: {
+        profile: {
+          id: "supabase-user-uuid",
+          email: "scientist@example.com",
+          display_name: "Scientist Name",
+          first_name: "Scientist",
+          last_name: "Name",
+          created_at: "2026-01-01T00:00:00Z",
+        },
+      },
+      error: null,
+    };
+
+    const emits: SessionState[] = [];
+    await bootstrapSession({
+      auth: adapter,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase: client as any,
+      initialState: previousState,
+      onStateChange: (s) => emits.push({ ...s }),
+    });
+
+    // Every emit during the rebootstrap MUST keep user/account non-null —
+    // the previous values stay visible until the new authoritative ones arrive.
+    for (const emit of emits) {
+      expect(emit.user, `user must persist during ${emit.status}`).not.toBeNull();
+      expect(emit.account, `account must persist during ${emit.status}`).not.toBeNull();
+    }
+  });
+
+  it("starts with user/account null when no initialState is provided (first bootstrap)", async () => {
+    // Regression guard: the existing first-bootstrap behavior must NOT change.
+    // Without initialState, the function still emits user/account null until
+    // they are loaded.
+    client.auth.getSession.mockResolvedValue({
+      data: { session: buildSession() },
+      error: null,
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const adapter = createSupabaseAuthAdapter({ supabase: client as any });
+
+    const emits: SessionState[] = [];
+    await bootstrapSession({
+      auth: adapter,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase: client as any,
+      onStateChange: (s) => emits.push({ ...s }),
+    });
+
+    // First emit (status: bootstrapping) is before any user/account fetch.
+    expect(emits[0].status).toBe("bootstrapping");
+    expect(emits[0].user).toBeNull();
+    expect(emits[0].account).toBeNull();
+  });
+
   it("reaches 'error' state if the profiles select fails", async () => {
     client.auth.getSession.mockResolvedValue({
       data: { session: buildSession() },

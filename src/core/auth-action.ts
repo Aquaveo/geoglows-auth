@@ -52,16 +52,23 @@ export interface AuthActionState {
 export function renderAuthAction(state: AuthActionState): string {
   const { user, account, status, action } = state;
 
-  if (LOADING_STATUSES.has(status)) {
-    return `
-      <div class="geoglows-auth-action-loading" role="status" aria-live="polite">
-        <span class="geoglows-auth-action-loading-dot" aria-hidden="true"></span>
-        Signing in…
-      </div>
-    `;
-  }
-
+  // If we have a user, prefer the avatar even during transient loading
+  // statuses. This protects against the visible flicker that would otherwise
+  // happen when Supabase JS fires SIGNED_IN on tab focus for session
+  // revalidation: consumers calling bootstrapSession again would briefly emit
+  // status "bootstrapping" / "loading_profile" / "loading_account" while the
+  // user is still authenticated. Pair with `bootstrapSession({ initialState })`
+  // (session.ts) which avoids nulling out user/account during those phases.
   if (!user) {
+    if (LOADING_STATUSES.has(status)) {
+      return `
+        <div class="geoglows-auth-action-loading" role="status" aria-live="polite">
+          <span class="geoglows-auth-action-loading-dot" aria-hidden="true"></span>
+          Signing in…
+        </div>
+      `;
+    }
+
     return `
       <button
         type="button"

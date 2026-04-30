@@ -25,6 +25,18 @@ export interface BootstrapSessionOptions {
   syncProfile?: boolean;
   loadAccount?: boolean;
   onStateChange?: (state: SessionState) => void;
+  /**
+   * Optional baseline state — pass the consumer's currently-known
+   * `{ status, user, account }` when re-running bootstrap (for example,
+   * in response to Supabase's `SIGNED_IN` event firing on tab focus).
+   * The transient `bootstrapping` / `loading_profile` / `loading_account`
+   * emits will preserve the previous user and account values instead of
+   * nulling them, avoiding the visible "Signing in…" flicker on the
+   * navbar avatar slot.
+   *
+   * Omit on first bootstrap.
+   */
+  initialState?: SessionState;
 }
 
 export interface UserDisplayInfo {
@@ -91,10 +103,15 @@ export async function bootstrapSession({
   syncProfile = true,
   loadAccount = true,
   onStateChange,
+  initialState,
 }: BootstrapSessionOptions): Promise<SessionState> {
-  let currentUser: AuthUser | null = null;
-  let currentAccount: AccountSummary | null = null;
-  let currentState = createState();
+  // When initialState is provided (rebootstrap on tab focus etc.), seed
+  // currentUser / currentAccount / currentState from it. Transient phases
+  // then carry the previous values forward until the new authoritative
+  // ones arrive, avoiding the avatar → "Signing in…" flicker.
+  let currentUser: AuthUser | null = initialState?.user ?? null;
+  let currentAccount: AccountSummary | null = initialState?.account ?? null;
+  let currentState: SessionState = initialState ?? createState();
 
   const emit = (overrides: Partial<SessionState>) => {
     currentState = createState({
@@ -106,7 +123,10 @@ export async function bootstrapSession({
   };
 
   try {
-    emit({ status: "bootstrapping", error: null, user: null, account: null });
+    // Carry previous user/account through the transient phase. On first
+    // bootstrap (no initialState), they are already null in currentState,
+    // so this is a no-op for that path.
+    emit({ status: "bootstrapping", error: null });
 
     auth.setupTokenRenewal();
     await auth.clearStaleAuthState();
@@ -131,27 +151,16 @@ export async function bootstrapSession({
     emit({
       status: "authenticated",
       user: currentUser,
-      account: null,
       error: null,
     });
 
     if (syncProfile) {
-      emit({
-        status: "loading_profile",
-        user: currentUser,
-        account: null,
-        error: null,
-      });
+      emit({ status: "loading_profile", user: currentUser, error: null });
       await ensureProfile(supabase, currentUser);
     }
 
     if (loadAccount) {
-      emit({
-        status: "loading_account",
-        user: currentUser,
-        account: null,
-        error: null,
-      });
+      emit({ status: "loading_account", user: currentUser, error: null });
       currentAccount = await loadAccountSummary(supabase, currentUser.sub);
     }
 
