@@ -5,6 +5,45 @@ All notable changes to `@aquaveo/geoglows-auth` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.2] — 2026-04-30
+
+### Fixed — avatar → "Signing in…" flicker on tab focus
+
+When a portal user signs in, switches browser tabs, and returns to the
+portal, the navbar avatar would briefly flicker to "Signing in…" before
+settling back. Root cause: Supabase JS fires a redundant `SIGNED_IN`
+event on every visibility-change session revalidation
+(`@supabase/auth-js` `_recoverAndRefresh`), which consumers were
+treating as a fresh sign-in and re-running `bootstrapSession`. The lib's
+transient `bootstrapping` / `loading_profile` / `loading_account` emits
+were nulling out user and account during the rebootstrap, causing the
+visible flicker.
+
+Two layers of defense, both shipped:
+
+- **`bootstrapSession({ initialState })`** — new optional baseline state.
+  When provided (consumers pass their currently-known `{ status, user,
+  account }`), the transient phases preserve the previous user and
+  account values until the new authoritative ones arrive. First-bootstrap
+  behavior is unchanged when `initialState` is omitted.
+- **`renderAuthAction`** — render-layer guard: if `user` is set, the
+  avatar renders even during loading status. Defense in depth: any
+  consumer that still re-bootstraps without `initialState` no longer
+  flickers.
+
+Consumer-side dedup (skip rebootstrap on `SIGNED_IN` for the same user)
+is still recommended — it eliminates the wasted network round trip — but
+the lib alone now masks the visible symptom.
+
+### Tests
+
+- 4 new `renderAuthAction` tests covering avatar-renders-during-loading
+  for `bootstrapping` / `loading_profile` / `loading_account` /
+  `null-account` cases.
+- 2 new `bootstrapSession` tests: `initialState` preserves user/account
+  through transient phases; first bootstrap (no `initialState`) still
+  starts with nulls.
+
 ## [1.1.1] — 2026-04-30
 
 Re-publish of the 1.1.0 changes. 1.1.0 was published in error without a
