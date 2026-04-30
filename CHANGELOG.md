@@ -5,6 +5,60 @@ All notable changes to `@aquaveo/geoglows-auth` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] — 2026-04-30
+
+### Added — vanilla-JS sign-in surface (`core` consumer)
+
+This release adds a vanilla-JS sign-in modal and auth-action helper as
+new public exports from `@aquaveo/geoglows-auth/core`, so vanilla consumer
+apps (apps.geoglows, grace-groundwater-dashboard, future sub-apps) no longer
+need to copy-paste the modal code from apps.geoglows.
+
+- **`mountSignInModal({ authAdapter, allowSignUp?, onSignedIn?, oauthRedirectTo?, emailRedirectTo? })`** —
+  mounts a `<dialog>`-based sign-in modal. Returns a handle with
+  `{ open, close, unmount }`. Supports OAuth (Google + GitHub) and
+  email/password sign-in; sign-up flow on by default, hidden via
+  `allowSignUp: false`. Errors thrown from `onSignedIn` are isolated from
+  the modal's own error handling. Open/close after `unmount` throws.
+  Sign-up routes through `authAdapter.signUpWithPassword` (no direct
+  Supabase client coupling).
+- **`renderAuthAction(state)`** — returns the HTML string for an auth-action
+  navbar slot (loading pill / sign-in button / avatar dropdown). Consumers
+  interpolate or surgically inject; element IDs `#geoglowsSignIn`,
+  `#geoglowsSignOut`, and `#geoglowsAuthActionAvatar` are stable for event
+  binding. `AuthActionState.status` is typed as `SessionStatus` and
+  `account` reuses `AccountSummary`.
+- **`escapeHtml(value)`** — the canonical HTML-escape helper. Use for every
+  `${value}` interpolation in vanilla-JS template-string-then-innerHTML
+  rendering. Returns `""` for null/undefined; escapes `& < > " '`.
+- **`SupabaseAuthAdapter.signUpWithPassword({ email, password, emailRedirectTo?, metadata? })`** —
+  new method on the adapter. The OIDC adapter does not implement it
+  (Cognito sign-up is server-driven, not modal-driven).
+- **`@aquaveo/geoglows-auth/core/sign-in.css`** — plain-CSS stylesheet for
+  the modal and auth-action. Light theme by default; dark theme available
+  via `[data-theme="dark"]` ancestor selector. Uses semantic class names
+  (`.geoglows-signin-*`, `.geoglows-auth-action-*`).
+
+### Public types
+
+- `SignInModalOptions`, `SignInModalHandle` — for `mountSignInModal`.
+- `AuthActionState`, `AuthActionVerb` — for `renderAuthAction`.
+- `SignUpWithPasswordArgs` — for `SupabaseAuthAdapter.signUpWithPassword`.
+
+### Why minor (not patch)
+
+Purely additive vs. 1.0.0 — `escapeHtml`, `mountSignInModal`,
+`renderAuthAction`, the namespaced element IDs, `signUpWithPassword`, the
+`./core/sign-in.css` subpath export, and the new types are all net-new.
+Existing 1.0.0 exports (`Profile`, `AuthAdapter`, `bootstrapSession`,
+`createSupabaseAuthAdapter`, `createOidcAuthAdapter`, etc.) are unchanged.
+Consumers on `^1.0.0` pick this up automatically via caret-range.
+
+### React surface unchanged
+
+`<SupabaseAuthUI>` and the rest of the `/react` exports remain available.
+The new vanilla surface is a sibling, not a replacement.
+
 ## [1.0.0] — 2026-04-29
 
 ### Breaking — runtime database contract change

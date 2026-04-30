@@ -189,5 +189,18 @@ export function createSupabaseAuthAdapter(
       });
       if (error) throw error;
     },
+
+    async signUpWithPassword({ email, password, emailRedirectTo, metadata }) {
+      const target = emailRedirectTo ?? config.defaultRedirectTo;
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          ...(target ? { emailRedirectTo: target } : {}),
+          ...(metadata ? { data: metadata } : {}),
+        },
+      });
+      if (error) throw error;
+    },
   };
 }

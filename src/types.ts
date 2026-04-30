@@ -72,10 +72,30 @@ export interface SupabaseAuthConfig {
   flow?: SupabaseAuthFlow;
 }
 
+export interface SignUpWithPasswordArgs {
+  email: string;
+  password: string;
+  /**
+   * Where the email-confirmation link redirects the user after they click it.
+   * Must be on the project's Supabase Auth → Redirect URLs allowlist.
+   */
+  emailRedirectTo?: string;
+  /**
+   * Sign-up-time identity that Supabase stores under `auth.users.user_metadata`.
+   * Per the lib's own learning at
+   * `docs/solutions/best-practices/user-metadata-is-auth-identity-not-profile-of-record-2026-04-29.md`,
+   * `user_metadata` is sign-up-time identity ONLY — `ensureProfile` reads it
+   * once to seed the row on first sign-in, then never again. Consumers must
+   * `escapeHtml(...)` these values on render.
+   */
+  metadata?: Record<string, unknown>;
+}
+
 export interface SupabaseAuthAdapter extends AuthAdapter {
   signInWithPassword(args: { email: string; password: string }): Promise<AuthUser>;
   signInWithMagicLink(args: { email: string; redirectTo?: string }): Promise<void>;
   signInWithOAuth(args: { provider: string; redirectTo?: string }): Promise<void>;
+  signUpWithPassword(args: SignUpWithPasswordArgs): Promise<void>;
 }
 
 export interface SupabaseFactoryOptions {
