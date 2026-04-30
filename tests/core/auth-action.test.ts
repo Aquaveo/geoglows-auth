@@ -67,9 +67,27 @@ describe("renderAuthAction", () => {
         account: null,
         status: "anonymous",
       });
-      expect(html).toContain('id="signIn"');
+      expect(html).toContain('id="geoglowsSignIn"');
       expect(html).toContain("geoglows-auth-action-signin");
       expect(html).toContain("Sign in");
+    });
+
+    it("renders the sign-in button when status is error and user is null", () => {
+      const html = renderAuthAction({
+        user: null,
+        account: null,
+        status: "error",
+      });
+      expect(html).toContain('id="geoglowsSignIn"');
+    });
+
+    it("renders the sign-in button when status is ready and user is null", () => {
+      const html = renderAuthAction({
+        user: null,
+        account: null,
+        status: "ready",
+      });
+      expect(html).toContain('id="geoglowsSignIn"');
     });
   });
 
@@ -80,9 +98,21 @@ describe("renderAuthAction", () => {
         account: { profile: buildProfile() },
         status: "ready",
       });
-      expect(html).toContain('id="authActionAvatar"');
+      expect(html).toContain('id="geoglowsAuthActionAvatar"');
       expect(html).toContain("geoglows-auth-action-avatar-summary");
-      expect(html).toContain('id="signOut"');
+      expect(html).toContain('id="geoglowsSignOut"');
+    });
+
+    it("renders the user's display name, email, and initials", () => {
+      const html = renderAuthAction({
+        user: buildUser(),
+        account: { profile: buildProfile() },
+        status: "ready",
+      });
+      expect(html).toContain("Ada Lovelace");
+      expect(html).toContain("user@example.com");
+      // Initials live inside the <summary>, possibly surrounded by whitespace.
+      expect(html).toMatch(/<summary[^>]*>\s*AL\s*<\/summary>/);
     });
 
     it("escapes user-controlled fields (name, email, initials) — XSS regression guard", () => {
@@ -108,7 +138,7 @@ describe("renderAuthAction", () => {
         status: "ready",
         action: "signing_out",
       });
-      expect(html).toMatch(/<button[^>]*id="signOut"[^>]*disabled/);
+      expect(html).toMatch(/<button[^>]*id="geoglowsSignOut"[^>]*disabled/);
       expect(html).toContain("Signing out");
     });
 
@@ -118,7 +148,7 @@ describe("renderAuthAction", () => {
         account: { profile: buildProfile() },
         status: "ready",
       });
-      expect(html).not.toMatch(/<button[^>]*id="signOut"[^>]*disabled/);
+      expect(html).not.toMatch(/<button[^>]*id="geoglowsSignOut"[^>]*disabled/);
       expect(html).toContain("Log out");
     });
   });

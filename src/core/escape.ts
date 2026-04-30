@@ -9,7 +9,7 @@
  * Returns an empty string for null/undefined; otherwise coerces to string and
  * escapes the five HTML-significant characters (`&`, `<`, `>`, `"`, `'`).
  */
-export function escape(value: unknown): string {
+export function escapeHtml(value: unknown): string {
   if (value == null) return "";
   return String(value)
     .replace(/&/g, "&amp;")

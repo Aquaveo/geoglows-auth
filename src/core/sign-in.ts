@@ -1,39 +1,27 @@
-import type { GeoglowsSupabaseClient, SupabaseAuthAdapter } from "../types";
-import { escape } from "./escape";
+import type { SupabaseAuthAdapter } from "../types";
+import { escapeHtml } from "./escape";
 // Side-effect import so Vite's library build emits sign-in.css alongside
 // the JS bundle. Consumers also get a stable subpath at
 // `@aquaveo/geoglows-auth/core/sign-in.css` for explicit imports.
 import "./sign-in.css";
 
-/**
- * Mode controls which form variants the modal renders.
- *
- * - `"full"` (default) renders the sign-in form plus a sign-up toggle (with
- *   first/last name fields and a confirmation-sent screen).
- * - `"signin"` renders only the sign-in form. The sign-up toggle is hidden;
- *   users intending to create an account must do so elsewhere. Useful for
- *   sub-apps that share a session with a primary app where account creation
- *   already lives.
- */
-export type SignInModalMode = "full" | "signin";
-
 export interface SignInModalOptions {
   /**
-   * The Supabase client to use for sign-up calls. Must be the same client the
-   * `authAdapter` was created against — the modal calls
-   * `supabase.auth.signUp(...)` directly for the sign-up branch.
-   */
-  supabase: GeoglowsSupabaseClient;
-  /**
-   * Adapter providing `signInWithPassword` and `signInWithOAuth`. Created via
-   * `createSupabaseAuthAdapter({ supabase })`.
+   * Adapter providing `signInWithPassword`, `signInWithOAuth`, and
+   * `signUpWithPassword`. Created via `createSupabaseAuthAdapter({ supabase })`.
    */
   authAdapter: SupabaseAuthAdapter;
-  /** Default `"full"`. See `SignInModalMode`. */
-  mode?: SignInModalMode;
+  /**
+   * When `true` (default), users can toggle between sign-in and sign-up.
+   * When `false`, only the sign-in form renders — useful for sub-apps that
+   * share a session with a primary app where account creation already lives.
+   */
+  allowSignUp?: boolean;
   /**
    * Called after successful password sign-in. OAuth flows redirect away, so
-   * this callback is not invoked for them.
+   * this callback is not invoked for them. Errors thrown from this callback
+   * are isolated from the modal's own error handling — they will be logged
+   * but will not surface as a "Sign-in failed" message.
    */
   onSignedIn?: () => void;
   /**
@@ -47,20 +35,20 @@ export interface SignInModalOptions {
    * `window.location.origin`. Must be on the allowlist.
    */
   emailRedirectTo?: string;
-  /**
-   * Where in the DOM to mount the dialog. Defaults to `document.body`.
-   */
-  container?: HTMLElement;
 }
 
 export interface SignInModalHandle {
-  /** Show the modal. Idempotent: calling on an already-open modal is a no-op. */
+  /** Show the modal. Idempotent. Throws if the handle has been unmounted. */
   open(): void;
-  /** Close the modal. Idempotent. */
+  /**
+   * Close the modal and reset to a fresh sign-in state. Idempotent. Cancels
+   * any in-flight submit so its resolution does not fire `onSignedIn`.
+   */
   close(): void;
   /**
-   * Remove the modal from the DOM and clean up listeners. The handle is
-   * unusable after this returns.
+   * Remove the modal from the DOM and clean up listeners. Cancels any in-flight
+   * submit. The handle is unusable after this returns — `open`/`close` will
+   * throw.
    */
   unmount(): void;
 }
@@ -72,13 +60,26 @@ const GENERIC_SIGNUP_ERROR =
 const GENERIC_OAUTH_ERROR =
   "We couldn't start the sign-in flow. Please try again.";
 
-type ModalMode = "signIn" | "signUp" | "signUpSent";
+type ModalView = "signIn" | "signUp" | "signUpSent";
 
 interface ModalState {
-  mode: ModalMode;
+  view: ModalView;
   error: string | null;
   pending: boolean;
+  /** Retained across re-renders so validation errors don't wipe typed input. */
+  email: string;
+  firstName: string;
+  lastName: string;
 }
+
+const INITIAL_STATE: ModalState = {
+  view: "signIn",
+  error: null,
+  pending: false,
+  email: "",
+  firstName: "",
+  lastName: "",
+};
 
 /**
  * Mounts a vanilla `<dialog>`-based sign-in modal. Returns a handle for
@@ -91,51 +92,89 @@ interface ModalState {
  * import { mountSignInModal } from "@aquaveo/geoglows-auth/core";
  * import "@aquaveo/geoglows-auth/core/sign-in.css";
  *
- * const modal = mountSignInModal({ supabase, authAdapter });
- * document.querySelector("#signIn")?.addEventListener("click", () => modal.open());
+ * const modal = mountSignInModal({ authAdapter });
+ * document.querySelector("#geoglowsSignIn")?.addEventListener("click", () => modal.open());
  * ```
  */
 export function mountSignInModal(
   options: SignInModalOptions,
 ): SignInModalHandle {
   const {
-    supabase,
     authAdapter,
-    mode: defaultMode = "full",
+    allowSignUp = true,
     onSignedIn,
     oauthRedirectTo,
     emailRedirectTo,
-    container = document.body,
   } = options;
 
   const dialog = document.createElement("dialog");
   dialog.id = "geoglowsSignInModal";
   dialog.className = "geoglows-signin-modal";
-  container.appendChild(dialog);
+  document.body.appendChild(dialog);
 
-  let state: ModalState = { mode: "signIn", error: null, pending: false };
+  let state: ModalState = { ...INITIAL_STATE };
+
+  // Tracks the currently-allowed in-flight request. Incremented on every
+  // close/unmount and on every new submit. Resolutions whose captured epoch
+  // doesn't match the live one are stale (the user closed the modal, hit
+  // Escape, or kicked off another request) and must not mutate state or fire
+  // onSignedIn.
+  let requestEpoch = 0;
+  let unmounted = false;
+
+  function assertMounted(): void {
+    if (unmounted) {
+      throw new Error("SignInModal handle has been unmounted");
+    }
+  }
+
+  function captureFormValues(): Pick<
+    ModalState,
+    "email" | "firstName" | "lastName"
+  > {
+    const form = dialog.querySelector("#geoglowsSignInForm");
+    if (!(form instanceof HTMLFormElement)) {
+      return {
+        email: state.email,
+        firstName: state.firstName,
+        lastName: state.lastName,
+      };
+    }
+    const read = (name: string): string | null => {
+      const el = form.querySelector(`input[name="${name}"]`);
+      return el instanceof HTMLInputElement ? el.value : null;
+    };
+    return {
+      email: read("email")?.trim() ?? state.email,
+      firstName: read("first_name")?.trim() ?? state.firstName,
+      lastName: read("last_name")?.trim() ?? state.lastName,
+    };
+  }
 
   function setState(patch: Partial<ModalState>): void {
     state = { ...state, ...patch };
     const scrollTop = dialog.scrollTop;
-    dialog.innerHTML = renderBody(state, defaultMode);
+    dialog.innerHTML = renderBody(state, allowSignUp);
     bindEvents();
     dialog.scrollTop = scrollTop;
   }
 
   function close(): void {
-    state = { mode: "signIn", error: null, pending: false };
-    dialog.innerHTML = renderBody(state, defaultMode);
+    requestEpoch++;
+    state = { ...INITIAL_STATE };
+    dialog.innerHTML = renderBody(state, allowSignUp);
     if (dialog.open) dialog.close();
   }
 
   function open(): void {
+    assertMounted();
     if (dialog.open) return;
-    setState({ mode: "signIn", error: null, pending: false });
+    setState({ ...INITIAL_STATE });
     dialog.showModal();
   }
 
   async function handleOAuth(provider: string): Promise<void> {
+    const epoch = ++requestEpoch;
     setState({ pending: true, error: null });
     try {
       await authAdapter.signInWithOAuth({
@@ -146,72 +185,93 @@ export function mountSignInModal(
     } catch (err) {
       console.error(
         "OAuth sign-in failed:",
-        err instanceof Error ? err.message : err,
+        err instanceof Error ? err.message : String(err),
       );
+      if (epoch !== requestEpoch || unmounted) return;
       setState({ pending: false, error: GENERIC_OAUTH_ERROR });
     }
   }
 
   async function handlePasswordSubmit(form: HTMLFormElement): Promise<void> {
-    const email = (form.elements.namedItem("email") as HTMLInputElement).value.trim();
-    const password = (form.elements.namedItem("password") as HTMLInputElement).value;
-    const isSignUp = state.mode === "signUp";
+    const captured = readFormValues(form);
+    const isSignUp = state.view === "signUp";
 
-    const firstNameEl = form.elements.namedItem("first_name") as HTMLInputElement | null;
-    const lastNameEl = form.elements.namedItem("last_name") as HTMLInputElement | null;
-    const firstName = isSignUp ? (firstNameEl?.value ?? "").trim() : "";
-    const lastName = isSignUp ? (lastNameEl?.value ?? "").trim() : "";
-
-    if (isSignUp && !firstName) {
-      setState({ error: "Please enter your first name." });
+    if (isSignUp && !captured.firstName) {
+      setState({ error: "Please enter your first name.", ...captured });
       return;
     }
-    if (isSignUp && !lastName) {
-      setState({ error: "Please enter your last name." });
+    if (isSignUp && !captured.lastName) {
+      setState({ error: "Please enter your last name.", ...captured });
       return;
     }
-    if (!email) {
-      setState({ error: "Please enter your email address." });
+    if (!captured.email) {
+      setState({ error: "Please enter your email address.", ...captured });
       return;
     }
-    if (!password.trim()) {
+    if (!captured.password.trim()) {
       setState({
-        error: isSignUp ? "Please choose a password." : "Please enter your password.",
+        error: isSignUp
+          ? "Please choose a password."
+          : "Please enter your password.",
+        ...captured,
       });
       return;
     }
 
-    setState({ pending: true, error: null });
+    const epoch = ++requestEpoch;
+    setState({ pending: true, error: null, ...captured });
+
     try {
       if (isSignUp) {
-        const fullName = [firstName, lastName].filter(Boolean).join(" ");
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: emailRedirectTo ?? window.location.origin,
-            data: {
-              first_name: firstName,
-              last_name: lastName,
-              full_name: fullName,
-            },
+        const fullName = [captured.firstName, captured.lastName]
+          .filter(Boolean)
+          .join(" ");
+        await authAdapter.signUpWithPassword({
+          email: captured.email,
+          password: captured.password,
+          emailRedirectTo: emailRedirectTo ?? window.location.origin,
+          metadata: {
+            first_name: captured.firstName,
+            last_name: captured.lastName,
+            full_name: fullName,
           },
         });
-        if (error) throw error;
-        setState({ pending: false, error: null, mode: "signUpSent" });
+        if (epoch !== requestEpoch || unmounted) return;
+        setState({
+          pending: false,
+          error: null,
+          view: "signUpSent",
+        });
       } else {
-        await authAdapter.signInWithPassword({ email, password });
+        await authAdapter.signInWithPassword({
+          email: captured.email,
+          password: captured.password,
+        });
+        if (epoch !== requestEpoch || unmounted) return;
         close();
-        onSignedIn?.();
+        // Isolate consumer-callback errors from auth-error rendering. A throw
+        // from onSignedIn must NOT bubble back into a "Sign-in failed" toast.
+        try {
+          onSignedIn?.();
+        } catch (callbackErr) {
+          console.error(
+            "onSignedIn callback threw:",
+            callbackErr instanceof Error
+              ? callbackErr.message
+              : String(callbackErr),
+          );
+        }
       }
     } catch (err) {
       console.error(
-        `${state.mode === "signUp" ? "Sign-up" : "Sign-in"} failed:`,
-        err instanceof Error ? err.message : err,
+        `${isSignUp ? "Sign-up" : "Sign-in"} failed:`,
+        err instanceof Error ? err.message : String(err),
       );
+      if (epoch !== requestEpoch || unmounted) return;
       setState({
         pending: false,
-        error: state.mode === "signUp" ? GENERIC_SIGNUP_ERROR : GENERIC_PASSWORD_ERROR,
+        error: isSignUp ? GENERIC_SIGNUP_ERROR : GENERIC_PASSWORD_ERROR,
+        ...captured,
       });
     }
   }
@@ -223,32 +283,42 @@ export function mountSignInModal(
 
     dialog
       .querySelector<HTMLButtonElement>("#geoglowsSignInGoogle")
-      ?.addEventListener("click", () => handleOAuth("google"));
+      ?.addEventListener("click", () => {
+        void handleOAuth("google");
+      });
 
     dialog
       .querySelector<HTMLButtonElement>("#geoglowsSignInGithub")
-      ?.addEventListener("click", () => handleOAuth("github"));
+      ?.addEventListener("click", () => {
+        void handleOAuth("github");
+      });
 
     dialog
       .querySelector<HTMLFormElement>("#geoglowsSignInForm")
       ?.addEventListener("submit", (e) => {
         e.preventDefault();
-        handlePasswordSubmit(e.target as HTMLFormElement);
+        const formEl = e.currentTarget;
+        if (formEl instanceof HTMLFormElement) {
+          void handlePasswordSubmit(formEl);
+        }
       });
 
     dialog
       .querySelector<HTMLButtonElement>("#geoglowsSignInToggleMode")
       ?.addEventListener("click", () => {
+        // Capture typed values so toggling sign-in <-> sign-up doesn't lose them.
+        const captured = captureFormValues();
         setState({
-          mode: state.mode === "signUp" ? "signIn" : "signUp",
+          view: state.view === "signUp" ? "signIn" : "signUp",
           error: null,
+          ...captured,
         });
       });
 
     dialog
       .querySelector<HTMLButtonElement>("#geoglowsSignInBackToForm")
       ?.addEventListener("click", () => {
-        setState({ mode: "signIn", error: null });
+        setState({ view: "signIn", error: null });
       });
   }
 
@@ -260,18 +330,28 @@ export function mountSignInModal(
 
   // Reset state on close (Escape key or programmatic close).
   function handleClose(): void {
-    state = { mode: "signIn", error: null, pending: false };
+    requestEpoch++;
+    state = { ...INITIAL_STATE };
+    // Re-render so DOM and state stay aligned for the next open().
+    dialog.innerHTML = renderBody(state, allowSignUp);
+    bindEvents();
   }
   dialog.addEventListener("close", handleClose);
 
   // Initial render
-  dialog.innerHTML = renderBody(state, defaultMode);
+  dialog.innerHTML = renderBody(state, allowSignUp);
   bindEvents();
 
   return {
     open,
-    close,
+    close(): void {
+      assertMounted();
+      close();
+    },
     unmount(): void {
+      if (unmounted) return;
+      unmounted = true;
+      requestEpoch++;
       dialog.removeEventListener("click", handleBackdropClick);
       dialog.removeEventListener("close", handleClose);
       if (dialog.open) dialog.close();
@@ -280,13 +360,34 @@ export function mountSignInModal(
   };
 }
 
-function renderBody(state: ModalState, defaultMode: SignInModalMode): string {
-  if (state.mode === "signUpSent") {
+interface CapturedFormValues {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+}
+
+function readFormValues(form: HTMLFormElement): CapturedFormValues {
+  const read = (name: string): string => {
+    const el = form.querySelector(`input[name="${name}"]`);
+    return el instanceof HTMLInputElement ? el.value : "";
+  };
+  return {
+    email: read("email").trim(),
+    password: read("password"),
+    firstName: read("first_name").trim(),
+    lastName: read("last_name").trim(),
+  };
+}
+
+function renderBody(state: ModalState, allowSignUp: boolean): string {
+  if (state.view === "signUpSent") {
     return `
       <div class="geoglows-signin-confirmation">
         <h2 class="geoglows-signin-title">Check your email</h2>
         <p class="geoglows-signin-confirmation-text">
-          We sent a confirmation link to your email. Click the link to finish creating your account.
+          If this email is new, we sent a confirmation link. Click it to finish
+          creating your account. If you already have an account, try signing in.
         </p>
         <button
           type="button"
@@ -299,10 +400,9 @@ function renderBody(state: ModalState, defaultMode: SignInModalMode): string {
     `;
   }
 
-  const isSignUp = state.mode === "signUp";
-  const showToggle = defaultMode === "full";
+  const isSignUp = state.view === "signUp";
   const errorBlock = state.error
-    ? `<p role="alert" aria-live="polite" class="geoglows-signin-error">${escape(state.error)}</p>`
+    ? `<p role="alert" aria-live="polite" class="geoglows-signin-error">${escapeHtml(state.error)}</p>`
     : "";
 
   const nameGrid = isSignUp
@@ -316,6 +416,7 @@ function renderBody(state: ModalState, defaultMode: SignInModalMode): string {
             type="text"
             autocomplete="given-name"
             class="geoglows-signin-input"
+            value="${escapeHtml(state.firstName)}"
             ${state.pending ? "disabled" : ""}
             required
           />
@@ -328,6 +429,7 @@ function renderBody(state: ModalState, defaultMode: SignInModalMode): string {
             type="text"
             autocomplete="family-name"
             class="geoglows-signin-input"
+            value="${escapeHtml(state.lastName)}"
             ${state.pending ? "disabled" : ""}
             required
           />
@@ -336,13 +438,13 @@ function renderBody(state: ModalState, defaultMode: SignInModalMode): string {
     `
     : "";
 
-  const toggle = showToggle
+  const toggle = allowSignUp
     ? `
       <p class="geoglows-signin-toggle-text">
         ${
           isSignUp
-            ? `Already have an account? <button type="button" id="geoglowsSignInToggleMode" class="geoglows-signin-toggle-button">Sign in</button>`
-            : `New here? <button type="button" id="geoglowsSignInToggleMode" class="geoglows-signin-toggle-button">Create an account</button>`
+            ? `Already have an account? <button type="button" id="geoglowsSignInToggleMode" class="geoglows-signin-toggle-button" ${state.pending ? "disabled" : ""}>Sign in</button>`
+            : `New here? <button type="button" id="geoglowsSignInToggleMode" class="geoglows-signin-toggle-button" ${state.pending ? "disabled" : ""}>Create an account</button>`
         }
       </p>
     `
@@ -404,6 +506,7 @@ function renderBody(state: ModalState, defaultMode: SignInModalMode): string {
             type="email"
             autocomplete="email"
             class="geoglows-signin-input"
+            value="${escapeHtml(state.email)}"
             ${state.pending ? "disabled" : ""}
             required
           />

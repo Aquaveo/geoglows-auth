@@ -24,7 +24,6 @@
       "require": "./dist/core.cjs"
     },
     "./core/sign-in.css": "./dist/geoglows-auth.css",
-    "./styles.css": "./dist/geoglows-auth.css",
     "./react": {
       "types": "./dist/types/react/index.d.ts",
       "import": "./dist/react.js",
