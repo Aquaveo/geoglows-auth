@@ -5,6 +5,72 @@ All notable changes to `@aquaveo/geoglows-auth` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] — 2026-04-30
+
+### Added — forgot-password flow (`core` consumer)
+
+The vanilla sign-in modal now supports the full password-recovery flow:
+request reset email → click email link → set new password → modal closes
+and user is signed in. Companion to the existing sign-in / sign-up flow;
+adds three new views and three new adapter methods.
+
+- **`SupabaseAuthAdapter.resetPasswordForEmail({ email, redirectTo? })`** —
+  triggers the recovery email. Falls back to `defaultRedirectTo` from
+  adapter config. Throws on Supabase errors. Resolves successfully even
+  for unknown emails (preserves enumeration resistance).
+- **`SupabaseAuthAdapter.updateUserPassword({ password })`** — updates
+  the currently-authenticated user's password (used during the recovery
+  session that follows the email link click). Does NOT take an `email`
+  argument — Supabase infers from the active session.
+- **`SupabaseAuthAdapter.signOutOtherSessions()`** — calls
+  `supabase.auth.signOut({ scope: "others" })`. Distinct from
+  `signOutRedirect()`: targets only OTHER active refresh tokens (other
+  devices/browsers), preserving the current session. Used internally
+  by the modal after a successful password update for security
+  best-practice; failure is logged but non-fatal.
+- **`mountSignInModal` `open({ view? })` overload** — pass
+  `{ view: "setNewPassword" }` from a `PASSWORD_RECOVERY` event handler,
+  `{ view: "recoveryError" }` when the URL hash carries
+  `error_code=otp_expired`, or `{ view: "forgotPassword" }` to skip
+  straight to the recovery-request form. Default view stays `"signIn"`
+  (backward-compatible).
+- **"Forgot password?" link** in the sign-in view, rendered as a
+  `<button type="button">` with class `.geoglows-signin-forgot-link`.
+  Always shown regardless of `allowSignUp` — recovery is independent
+  of sign-up availability.
+
+### Modal behavior highlights
+
+- The `setNewPassword` view fetches the recovery user via
+  `authAdapter.getCurrentUser()` and renders a "Resetting password for
+  `<email>`" header. This prevents silent identity-swap on shared/
+  borrowed browsers when the recovery email is for an account different
+  from the currently-signed-in user.
+- After successful `updateUserPassword`, the modal calls
+  `signOutOtherSessions` (best-effort) and renders an inline
+  "Password updated. We've signed you out on other devices for safety."
+  message for ~1.5s before closing — explicit messaging, not silent
+  surprise.
+- Closing the `setNewPassword` view via "Back to sign in" calls
+  `signOutRedirect` to clear the recovery session so it doesn't linger
+  unauthenticated as a different user.
+- Auth errors during `updateUserPassword` (recovery session expired)
+  transition to a `recoveryError` view that surfaces a corporate-
+  gateway hint and a `mailto:gromero@aquaveo.com` support fallback —
+  graceful degradation for users whose email security gateway
+  pre-fetches the link.
+
+### Tests
+
+- 26 new tests in `tests/core/sign-in.test.ts` covering forgot-password
+  entry / forgotPassword view (8 scenarios) / forgotPasswordSent view /
+  `open({ view })` overload (4 scenarios) / setNewPassword view
+  (8 scenarios) / recoveryError view (2 scenarios).
+- 7 new tests in `tests/core/supabase-auth.test.ts` covering each new
+  adapter method (happy path + error path; `signOutOtherSessions` has
+  a regression guard against calling without scope).
+- 181/181 tests pass; build clean.
+
 ## [1.1.2] — 2026-04-30
 
 ### Fixed — avatar → "Signing in…" flicker on tab focus
