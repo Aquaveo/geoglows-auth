@@ -24,6 +24,7 @@ export async function ensureProfile(
   user: AuthUser,
 ): Promise<Profile> {
   const { data: existing, error: selectError } = await supabase
+    .schema("core")
     .from("profiles")
     .select("*")
     .eq("id", user.sub)
@@ -54,6 +55,7 @@ export async function ensureProfile(
   };
 
   const { data, error } = await supabase
+    .schema("core")
     .from("profiles")
     .insert(insertPayload)
     .select()
@@ -97,6 +99,7 @@ export async function updateProfile(
   }
 
   const { data, error } = await supabase
+    .schema("core")
     .from("profiles")
     .update(updates)
     .eq("id", id)
