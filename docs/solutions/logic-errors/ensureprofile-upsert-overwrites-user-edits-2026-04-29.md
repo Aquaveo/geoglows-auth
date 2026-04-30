@@ -22,9 +22,17 @@ tags:
   - postgrest
   - on-conflict
   - auth
+last_updated: 2026-04-30
 ---
 
 # ensureProfile upsert silently overwrites user-edited profile fields
+
+> **Note (2026-04-30):** As of `@aquaveo/geoglows-auth@1.0.0`, the underlying
+> table is `core.profiles`. The select-then-insert fix described below works
+> identically against the new table; the lib's call sites use
+> `.schema('core').from('profiles')`. `public.profiles` remains as a
+> `security_invoker = true` compatibility view for older bundles. See
+> `apps.geoglows/docs/solutions/best-practices/zero-downtime-schema-relocation-with-security-invoker-view-2026-04-30.md`.
 
 ## Problem
 
