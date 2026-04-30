@@ -12,6 +12,9 @@ interface MockSupabaseClient {
     signInWithOtp: ReturnType<typeof vi.fn>;
     signInWithOAuth: ReturnType<typeof vi.fn>;
   };
+  schema: ReturnType<typeof vi.fn>;
+  // Exposed for tests that introspect the inner `from` chain (call counts /
+  // overrides). Set by buildClient and updated when tests swap chains.
   from: ReturnType<typeof vi.fn>;
 }
 
@@ -79,6 +82,10 @@ function buildClient(opts: { existingProfile?: boolean } = {}): ClientMocks {
     }
     throw new Error(`Unexpected table: ${table}`);
   });
+  const schema = vi.fn((name: string) => {
+    if (name === "core") return { from };
+    throw new Error(`Unexpected schema: ${name}`);
+  });
 
   const client: MockSupabaseClient = {
     auth: {
@@ -92,6 +99,7 @@ function buildClient(opts: { existingProfile?: boolean } = {}): ClientMocks {
       signInWithOtp: vi.fn(),
       signInWithOAuth: vi.fn(),
     },
+    schema,
     from,
   };
 
@@ -170,6 +178,7 @@ describe("bootstrapSession with the Supabase Auth adapter", () => {
       supabase: client as any,
     });
 
+    expect(client.schema).toHaveBeenCalledWith("core");
     expect(client.from).toHaveBeenCalledWith("profiles");
     expect(mocks.profilesInsert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -268,6 +277,8 @@ describe("bootstrapSession with the Supabase Auth adapter", () => {
       })),
       insert: vi.fn(),
     }));
+    // Re-wire schema('core') to return the new from chain.
+    client.schema = vi.fn(() => ({ from: client.from }));
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const adapter = createSupabaseAuthAdapter({ supabase: client as any });

@@ -5,7 +5,7 @@ import { ProfileEditForm } from "../../src/react/ProfileEditForm";
 import type { Profile } from "../../src/types";
 
 interface MockSupabase {
-  from: ReturnType<typeof vi.fn>;
+  schema: ReturnType<typeof vi.fn>;
 }
 
 function buildMock(returnedRow: Partial<Profile>) {
@@ -14,7 +14,8 @@ function buildMock(returnedRow: Partial<Profile>) {
   const eq = vi.fn(() => ({ select }));
   const update = vi.fn(() => ({ eq }));
   const from = vi.fn(() => ({ update }));
-  return { client: { from } as MockSupabase, update, eq };
+  const schema = vi.fn(() => ({ from }));
+  return { client: { schema } as MockSupabase, update, eq };
 }
 
 const filledProfile: Profile = {

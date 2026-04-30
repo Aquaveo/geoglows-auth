@@ -5,7 +5,7 @@ import { ProfileSetupForm } from "../../src/react/ProfileSetupForm";
 import type { Profile } from "../../src/types";
 
 interface MockSupabase {
-  from: ReturnType<typeof vi.fn>;
+  schema: ReturnType<typeof vi.fn>;
 }
 
 function buildProfileMockWithUpdate(returnedRow: Partial<Profile>) {
@@ -14,7 +14,8 @@ function buildProfileMockWithUpdate(returnedRow: Partial<Profile>) {
   const eq = vi.fn(() => ({ select }));
   const update = vi.fn(() => ({ eq }));
   const from = vi.fn(() => ({ update }));
-  return { client: { from } as MockSupabase, update, eq };
+  const schema = vi.fn(() => ({ from }));
+  return { client: { schema } as MockSupabase, update, eq };
 }
 
 const baseProfile: Profile = {
@@ -166,12 +167,13 @@ describe("<ProfileSetupForm>", () => {
     const eq = vi.fn(() => ({ select }));
     const update = vi.fn(() => ({ eq }));
     const from = vi.fn(() => ({ update }));
+    const schema = vi.fn(() => ({ from }));
     const onError = vi.fn();
 
     render(
       <ProfileSetupForm
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        supabase={{ from } as any}
+        supabase={{ schema } as any}
         profile={baseProfile}
         onError={onError}
       />,

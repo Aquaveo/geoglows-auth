@@ -21,6 +21,7 @@ export async function loadAccountSummary(
   userId: string,
 ): Promise<AccountSummary> {
   const { data: profile, error: profileError } = await supabase
+    .schema("core")
     .from("profiles")
     .select("*")
     .eq("id", userId)

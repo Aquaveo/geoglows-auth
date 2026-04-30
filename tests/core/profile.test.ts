@@ -7,7 +7,7 @@ import {
 import type { AuthUser, Profile } from "../../src/types";
 
 interface MockSupabase {
-  from: ReturnType<typeof vi.fn>;
+  schema: ReturnType<typeof vi.fn>;
 }
 
 function buildAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
@@ -50,7 +50,11 @@ function buildEnsureProfileMock(opts: {
     }
     throw new Error(`Unexpected table: ${table}`);
   });
-  return { client: { from } as MockSupabase, selectForLookup, eq, insert };
+  const schema = vi.fn((name: string) => {
+    if (name === "core") return { from };
+    throw new Error(`Unexpected schema: ${name}`);
+  });
+  return { client: { schema } as MockSupabase, selectForLookup, eq, insert };
 }
 
 function buildProfileMockWithUpdate(returnedRow: Partial<Profile>) {
@@ -62,7 +66,11 @@ function buildProfileMockWithUpdate(returnedRow: Partial<Profile>) {
     if (table === "profiles") return { update };
     throw new Error(`Unexpected table: ${table}`);
   });
-  return { client: { from } as MockSupabase, update, eq };
+  const schema = vi.fn((name: string) => {
+    if (name === "core") return { from };
+    throw new Error(`Unexpected schema: ${name}`);
+  });
+  return { client: { schema } as MockSupabase, update, eq };
 }
 
 describe("ensureProfile", () => {
@@ -263,11 +271,12 @@ describe("updateProfile", () => {
     const eq = vi.fn(() => ({ select }));
     const update = vi.fn(() => ({ eq }));
     const from = vi.fn(() => ({ update }));
+    const schema = vi.fn(() => ({ from }));
 
     await expect(
       updateProfile(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        { from } as any,
+        { schema } as any,
         { id: "user-uuid-1", user_type: "researcher" },
       ),
     ).rejects.toThrow(/invalid user_type/i);
