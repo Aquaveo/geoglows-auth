@@ -5,7 +5,14 @@ All notable changes to `@aquaveo/geoglows-auth` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.1.0] — 2026-04-30
+## [1.1.1] — 2026-04-30
+
+Re-publish of the 1.1.0 changes. 1.1.0 was published in error without a
+build and was unpublished from the registry; npm permanently reserves
+unpublished version numbers, so the same artifact ships as 1.1.1. No
+content difference vs the 1.1.0 entry below.
+
+## [1.1.0] — 2026-04-30 (unpublished)
 
 ### Added — vanilla-JS sign-in surface (`core` consumer)
 
