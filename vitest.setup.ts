@@ -58,3 +58,27 @@ import { afterEach } from "vitest";
 afterEach(() => {
   storage.clear();
 });
+
+// jsdom 26 ships `HTMLDialogElement` but doesn't implement `showModal()` /
+// `close()` on its prototype — calling them throws "Not implemented". Patch
+// the prototype with minimal in-memory open/close behavior so vanilla
+// `<dialog>`-based components (sign-in modal) are testable. See
+// apps.geoglows/docs/solutions/test-failures/jsdom-26-htmldialogelement-undefined-2026-04-29.md
+if (typeof HTMLDialogElement !== "undefined") {
+  if (!HTMLDialogElement.prototype.showModal) {
+    HTMLDialogElement.prototype.showModal = function showModal(): void {
+      this.open = true;
+    };
+  }
+  if (!HTMLDialogElement.prototype.show) {
+    HTMLDialogElement.prototype.show = function show(): void {
+      this.open = true;
+    };
+  }
+  if (!HTMLDialogElement.prototype.close) {
+    HTMLDialogElement.prototype.close = function close(): void {
+      this.open = false;
+      this.dispatchEvent(new Event("close"));
+    };
+  }
+}

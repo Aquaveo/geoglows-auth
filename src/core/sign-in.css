@@ -1,0 +1,421 @@
+/* @aquaveo/geoglows-auth — vanilla sign-in modal styles
+ *
+ * Plain CSS (NOT Tailwind). Semantic class names. Light theme by default;
+ * consumers that want a dark theme can override via:
+ *   [data-theme="dark"] .geoglows-signin-modal { ... }
+ *
+ * The dialog uses explicit `position: fixed; transform: translate(-50%, -50%)`
+ * for centering — UA `<dialog>:modal` defaults are unreliable under common
+ * CSS resets (Tailwind preflight, Calcite Components, etc.). See:
+ *   apps.geoglows/CLAUDE.md § Conventions
+ */
+
+.geoglows-signin-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  width: calc(100vw - 2rem);
+  max-width: 28rem;
+  max-height: 90vh;
+  overflow-y: auto;
+  border-radius: 1rem;
+  padding: 0;
+  background: #ffffff;
+  color: #1e293b;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.geoglows-signin-modal::backdrop {
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(2px);
+}
+
+.geoglows-signin-content {
+  padding: 2rem;
+}
+
+.geoglows-signin-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+.geoglows-signin-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+}
+.geoglows-signin-close {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.geoglows-signin-close:hover {
+  color: #475569;
+}
+
+.geoglows-signin-error {
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fee2e2;
+}
+
+.geoglows-signin-providers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+.geoglows-signin-provider-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.625rem 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+.geoglows-signin-provider-button:hover:not(:disabled) {
+  background: #f8fafc;
+}
+.geoglows-signin-provider-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.geoglows-signin-divider {
+  position: relative;
+  margin: 1rem 0;
+  text-align: center;
+}
+.geoglows-signin-divider::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  border-top: 1px solid #e2e8f0;
+}
+.geoglows-signin-divider-label {
+  position: relative;
+  display: inline-block;
+  padding: 0 0.5rem;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.geoglows-signin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.geoglows-signin-name-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+.geoglows-signin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.geoglows-signin-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+}
+.geoglows-signin-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: inherit;
+  font-size: 0.875rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.geoglows-signin-input:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: -1px;
+  border-color: transparent;
+}
+.geoglows-signin-input:disabled {
+  opacity: 0.6;
+}
+
+.geoglows-signin-submit {
+  width: 100%;
+  padding: 0.625rem 1rem;
+  border-radius: 0.75rem;
+  border: 0;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  margin-top: 0.25rem;
+}
+.geoglows-signin-submit:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+.geoglows-signin-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.geoglows-signin-toggle-text {
+  margin-top: 1rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+.geoglows-signin-toggle-button {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: #2563eb;
+  font-weight: 600;
+  font-size: inherit;
+  cursor: pointer;
+  text-underline-offset: 2px;
+}
+.geoglows-signin-toggle-button:hover {
+  text-decoration: underline;
+}
+
+.geoglows-signin-confirmation {
+  padding: 2rem;
+}
+.geoglows-signin-confirmation-text {
+  font-size: 0.875rem;
+  color: #475569;
+  margin: 0.75rem 0 1.5rem 0;
+}
+.geoglows-signin-confirmation-back {
+  width: 100%;
+  padding: 0.625rem 1rem;
+  border-radius: 0.75rem;
+  border: 0;
+  background: #f1f5f9;
+  color: #1e293b;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.geoglows-signin-confirmation-back:hover {
+  background: #e2e8f0;
+}
+
+/* Auth action — sign-in button / avatar dropdown */
+
+.geoglows-auth-action-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.875rem;
+}
+.geoglows-auth-action-loading-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: #3b82f6;
+  animation: geoglows-auth-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes geoglows-auth-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.geoglows-auth-action-signin {
+  padding: 0.5rem 1rem;
+  border-radius: 0.75rem;
+  border: 0;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: background 0.15s;
+}
+.geoglows-auth-action-signin:hover {
+  background: #1d4ed8;
+}
+
+.geoglows-auth-action-avatar-wrapper {
+  position: relative;
+}
+.geoglows-auth-action-avatar-summary {
+  list-style: none;
+  cursor: pointer;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  background: linear-gradient(to bottom right, #3b82f6, #22d3ee);
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  transition: opacity 0.15s;
+}
+.geoglows-auth-action-avatar-summary::-webkit-details-marker { display: none; }
+.geoglows-auth-action-avatar-summary:hover { opacity: 0.9; }
+
+.geoglows-auth-action-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 0.5rem;
+  width: 14rem;
+  border-radius: 1rem;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  z-index: 50;
+}
+.geoglows-auth-action-menu-header {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+.geoglows-auth-action-menu-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.geoglows-auth-action-menu-email {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.geoglows-auth-action-menu-link {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  color: #334155;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.geoglows-auth-action-menu-link:hover { background: #f8fafc; }
+.geoglows-auth-action-menu-divider {
+  border-top: 1px solid #f1f5f9;
+}
+.geoglows-auth-action-menu-signout {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  color: #dc2626;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.geoglows-auth-action-menu-signout:hover:not(:disabled) {
+  background: #fef2f2;
+}
+.geoglows-auth-action-menu-signout:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* --- Dark theme overrides (opt-in via [data-theme="dark"] on an ancestor) --- */
+
+[data-theme="dark"] .geoglows-signin-modal {
+  background: #0f172a;
+  color: #f1f5f9;
+  border-color: #334155;
+}
+[data-theme="dark"] .geoglows-signin-close { color: #94a3b8; }
+[data-theme="dark"] .geoglows-signin-close:hover { color: #e2e8f0; }
+[data-theme="dark"] .geoglows-signin-error {
+  color: #fca5a5;
+  background: rgba(127, 29, 29, 0.2);
+  border-color: rgba(127, 29, 29, 0.4);
+}
+[data-theme="dark"] .geoglows-signin-provider-button {
+  border-color: #334155;
+  background: transparent;
+}
+[data-theme="dark"] .geoglows-signin-provider-button:hover:not(:disabled) {
+  background: #1e293b;
+}
+[data-theme="dark"] .geoglows-signin-divider::before { border-color: #334155; }
+[data-theme="dark"] .geoglows-signin-divider-label {
+  background: #0f172a;
+  color: #94a3b8;
+}
+[data-theme="dark"] .geoglows-signin-label { color: #94a3b8; }
+[data-theme="dark"] .geoglows-signin-input {
+  border-color: #334155;
+  background: #020617;
+  color: #f1f5f9;
+}
+[data-theme="dark"] .geoglows-signin-toggle-text { color: #94a3b8; }
+[data-theme="dark"] .geoglows-signin-toggle-button { color: #60a5fa; }
+[data-theme="dark"] .geoglows-signin-confirmation-text { color: #cbd5e1; }
+[data-theme="dark"] .geoglows-signin-confirmation-back {
+  background: #1e293b;
+  color: #f1f5f9;
+}
+[data-theme="dark"] .geoglows-signin-confirmation-back:hover { background: #334155; }
+[data-theme="dark"] .geoglows-auth-action-loading {
+  background: #1e293b;
+  color: #cbd5e1;
+}
+[data-theme="dark"] .geoglows-auth-action-menu {
+  background: #0f172a;
+  border-color: #334155;
+}
+[data-theme="dark"] .geoglows-auth-action-menu-header { border-bottom-color: #1e293b; }
+[data-theme="dark"] .geoglows-auth-action-menu-name { color: #f1f5f9; }
+[data-theme="dark"] .geoglows-auth-action-menu-email { color: #94a3b8; }
+[data-theme="dark"] .geoglows-auth-action-menu-link { color: #e2e8f0; }
+[data-theme="dark"] .geoglows-auth-action-menu-link:hover { background: #1e293b; }
+[data-theme="dark"] .geoglows-auth-action-menu-divider { border-top-color: #1e293b; }
+[data-theme="dark"] .geoglows-auth-action-menu-signout { color: #f87171; }
+[data-theme="dark"] .geoglows-auth-action-menu-signout:hover:not(:disabled) {
+  background: rgba(127, 29, 29, 0.2);
+}

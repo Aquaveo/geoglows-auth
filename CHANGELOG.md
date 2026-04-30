@@ -5,6 +5,41 @@ All notable changes to `@aquaveo/geoglows-auth` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] — 2026-04-30
+
+### Added — vanilla-JS sign-in surface (`core` consumer)
+
+This release adds a vanilla-JS sign-in modal and auth-action helper as
+new public exports from `@aquaveo/geoglows-auth/core`, so vanilla consumer
+apps (apps.geoglows, grace-groundwater-dashboard, future sub-apps) no longer
+need to copy-paste the modal code from apps.geoglows.
+
+- **`mountSignInModal({ supabase, authAdapter, mode?, onSignedIn?, ... })`** —
+  mounts a `<dialog>`-based sign-in modal. Returns a handle with
+  `{ open, close, unmount }`. Supports OAuth (Google + GitHub) and
+  email/password sign-in; sign-up flow available via `mode: "full"` (default)
+  or hidden via `mode: "signin"`.
+- **`renderAuthAction(state)`** — returns the HTML string for an auth-action
+  navbar slot (loading pill / sign-in button / avatar dropdown). Consumers
+  interpolate or surgically inject; element IDs `#signIn`, `#signOut`, and
+  `#authActionAvatar` are stable for event binding.
+- **`escape(value)`** — the canonical HTML-escape helper, now public. Use
+  for every `${value}` interpolation in vanilla-JS template-string-then-
+  innerHTML rendering.
+- **`@aquaveo/geoglows-auth/core/sign-in.css`** — plain-CSS stylesheet for
+  the modal and auth-action. Light theme by default; dark theme available
+  via `[data-theme="dark"]` ancestor selector. Uses semantic class names
+  (`.geoglows-signin-*`, `.geoglows-auth-action-*`).
+
+This is a **minor** bump — purely additive. No breaking changes; existing
+exports unchanged. Consumers on `^1.0.0` pick this up automatically via
+caret-range.
+
+### React surface unchanged
+
+`<SupabaseAuthUI>` and the rest of the `/react` exports remain available.
+The new vanilla surface is a sibling, not a replacement.
+
 ## [1.0.0] — 2026-04-29
 
 ### Breaking — runtime database contract change
