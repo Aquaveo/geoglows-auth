@@ -17,9 +17,16 @@ tags:
   - user-metadata
   - data-of-record
   - identity
+last_updated: 2026-04-30
 ---
 
 # Supabase user_metadata is auth-time identity, not the profile of record
+
+> **Note (2026-04-30):** As of `@aquaveo/geoglows-auth@1.0.0`, the canonical
+> table is `core.profiles`. `public.profiles` remains as a `security_invoker = true`
+> compatibility view during consumer cutover. The profile-of-record rule below
+> is unchanged — only the table location moved. See
+> `apps.geoglows/docs/solutions/best-practices/zero-downtime-schema-relocation-with-security-invoker-view-2026-04-30.md`.
 
 ## Context
 
