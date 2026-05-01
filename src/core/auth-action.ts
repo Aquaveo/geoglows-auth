@@ -1,7 +1,7 @@
 import type { AuthUser } from "../types";
 import type { AccountSummary } from "./account";
 import { getUserDisplayInfo, type SessionStatus } from "./session";
-import { escapeHtml } from "./escape";
+import { escapeHtml, sanitizeHref } from "./escape";
 
 /**
  * Statuses that render the loading pill. Centralized so future additions to
@@ -32,6 +32,27 @@ export interface AuthActionState {
 }
 
 /**
+ * Optional rendering options for `renderAuthAction`.
+ *
+ * `profileHref` controls the destination of the Profile link in the avatar
+ * dropdown. The default `"#profile"` preserves backward compat for consumers
+ * that handle the hash route in their own router (e.g. apps.geoglows). Sub-apps
+ * that want the link to navigate elsewhere (typically the portal's profile
+ * page) should pass an absolute or root-relative URL like `"/#profile"` or
+ * `"https://portal-dev.geoglows.org/#profile"`.
+ *
+ * Pass `null` to omit the Profile link entirely from the dropdown — useful when
+ * a sub-app does not have its own profile page AND the portal is unreachable
+ * from this surface.
+ *
+ * Dangerous URL schemes (`javascript:`, `data:`, `vbscript:`) are rejected by
+ * `sanitizeHref` and behave the same as `null` (link omitted).
+ */
+export interface AuthActionOptions {
+  profileHref?: string | null;
+}
+
+/**
  * Returns the HTML string for the auth-action slot in a navbar.
  *
  * Three states it can render:
@@ -49,8 +70,17 @@ export interface AuthActionState {
  * Pair with `mountSignInModal` and `import "@aquaveo/geoglows-auth/core/sign-in.css"`
  * for the matching styles.
  */
-export function renderAuthAction(state: AuthActionState): string {
+export function renderAuthAction(
+  state: AuthActionState,
+  options: AuthActionOptions = {},
+): string {
   const { user, account, status, action } = state;
+  // `profileHref === undefined` means "use the default" (#profile); explicit
+  // `null` means "omit the Profile link"; any other string flows through
+  // sanitizeHref which also returns null for dangerous schemes.
+  const rawProfileHref =
+    options.profileHref === undefined ? "#profile" : options.profileHref;
+  const profileHref = sanitizeHref(rawProfileHref);
 
   // If we have a user, prefer the avatar even during transient loading
   // statuses. This protects against the visible flicker that would otherwise
@@ -93,7 +123,7 @@ export function renderAuthAction(state: AuthActionState): string {
           <p class="geoglows-auth-action-menu-name">${escapeHtml(name)}</p>
           <p class="geoglows-auth-action-menu-email">${escapeHtml(email)}</p>
         </div>
-        <a href="#profile" class="geoglows-auth-action-menu-link">Profile</a>
+        ${profileHref === null ? "" : `<a href="${escapeHtml(profileHref)}" class="geoglows-auth-action-menu-link">Profile</a>`}
         <div class="geoglows-auth-action-menu-divider"></div>
         <button
           type="button"

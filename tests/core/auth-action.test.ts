@@ -202,4 +202,109 @@ describe("renderAuthAction", () => {
       expect(html).toContain("Log out");
     });
   });
+
+  describe("Profile link configuration (profileHref option)", () => {
+    const signedInState = () => ({
+      user: buildUser(),
+      account: { profile: buildProfile() },
+      status: "ready" as const,
+    });
+
+    it("defaults to '#profile' when no options arg is passed (apps.geoglows backward compat)", () => {
+      const html = renderAuthAction(signedInState());
+      expect(html).toMatch(
+        /<a[^>]*href="#profile"[^>]*class="geoglows-auth-action-menu-link"[^>]*>Profile<\/a>/,
+      );
+    });
+
+    it("uses the provided profileHref when passed an explicit value", () => {
+      const html = renderAuthAction(signedInState(), { profileHref: "/#profile" });
+      expect(html).toContain('href="/#profile"');
+      expect(html).not.toContain('href="#profile"');
+    });
+
+    it("renders an absolute URL when profileHref is absolute", () => {
+      const html = renderAuthAction(signedInState(), {
+        profileHref: "https://example.com/#profile",
+      });
+      expect(html).toContain('href="https://example.com/#profile"');
+    });
+
+    it("omits the Profile link entirely when profileHref is null", () => {
+      const html = renderAuthAction(signedInState(), { profileHref: null });
+      expect(html).not.toContain("geoglows-auth-action-menu-link");
+      expect(html).not.toContain(">Profile<");
+      // Email header and sign-out button still render
+      expect(html).toContain('id="geoglowsSignOut"');
+      expect(html).toContain("Ada Lovelace");
+    });
+
+    it("escapes HTML-significant characters in the profileHref attribute", () => {
+      const html = renderAuthAction(signedInState(), {
+        profileHref: '"><script>alert(1)</script>',
+      });
+      expect(html).not.toContain("<script>");
+      expect(html).toContain("&lt;script&gt;");
+    });
+
+    it("omits the Profile link entirely when profileHref has a javascript: scheme", () => {
+      const html = renderAuthAction(signedInState(), {
+        profileHref: "javascript:alert(1)",
+      });
+      expect(html).not.toContain("geoglows-auth-action-menu-link");
+      expect(html).not.toContain("javascript:");
+    });
+
+    it("omits the Profile link entirely when profileHref has a data: scheme", () => {
+      const html = renderAuthAction(signedInState(), {
+        profileHref: "data:text/html,<script>alert(1)</script>",
+      });
+      expect(html).not.toContain("geoglows-auth-action-menu-link");
+    });
+
+    it("omits the Profile link when profileHref has a vbscript: scheme", () => {
+      const html = renderAuthAction(signedInState(), {
+        profileHref: "vbscript:msgbox(1)",
+      });
+      expect(html).not.toContain("geoglows-auth-action-menu-link");
+    });
+
+    it("omits the Profile link when profileHref is whitespace-prefixed javascript:", () => {
+      const html = renderAuthAction(signedInState(), {
+        profileHref: "  javascript:alert(1)",
+      });
+      expect(html).not.toContain("geoglows-auth-action-menu-link");
+    });
+
+    it("renders the Profile link for allowed schemes (https, /, /#)", () => {
+      const httpsHtml = renderAuthAction(signedInState(), {
+        profileHref: "https://example.com/profile",
+      });
+      expect(httpsHtml).toContain("geoglows-auth-action-menu-link");
+
+      const rootRelativeHtml = renderAuthAction(signedInState(), {
+        profileHref: "/profile",
+      });
+      expect(rootRelativeHtml).toContain('href="/profile"');
+
+      const rootHashHtml = renderAuthAction(signedInState(), {
+        profileHref: "/#profile",
+      });
+      expect(rootHashHtml).toContain('href="/#profile"');
+    });
+
+    it("does not render a Profile link in signed-out / loading states regardless of profileHref", () => {
+      const signedOutHtml = renderAuthAction(
+        { user: null, account: null, status: "anonymous" },
+        { profileHref: "/#profile" },
+      );
+      expect(signedOutHtml).not.toContain("geoglows-auth-action-menu-link");
+
+      const loadingHtml = renderAuthAction(
+        { user: null, account: null, status: "bootstrapping" },
+        { profileHref: "/#profile" },
+      );
+      expect(loadingHtml).not.toContain("geoglows-auth-action-menu-link");
+    });
+  });
 });
