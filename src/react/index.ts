@@ -8,3 +8,4 @@ export * from "./ProfileFields";
 export * from "./ProfileSetupForm";
 export * from "./ProfileEditForm";
 export * from "./ProfileCompletionBanner";
+export * from "./PasswordResetForm";
