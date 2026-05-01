@@ -50,6 +50,15 @@ export interface SupabaseAuthUIProps {
    * "Check your email for the sign-in link."
    */
   magicLinkSentMessage?: string;
+  /**
+   * Optional callback for the "Forgot password?" link rendered below the
+   * password input in `password` mode. When provided, the link renders;
+   * the consumer is responsible for switching to its own password-reset
+   * view (e.g., mounting `<PasswordResetForm>` from this same lib).
+   *
+   * Not rendered in `magicLink` mode — recovery is a password-flow concept.
+   */
+  onForgotPasswordClick?: () => void;
   containerStyle?: CSSProperties;
 }
 
@@ -113,6 +122,7 @@ export function SupabaseAuthUI({
   onError,
   magicLinkRedirectTo,
   magicLinkSentMessage,
+  onForgotPasswordClick,
   containerStyle,
 }: SupabaseAuthUIProps) {
   const { refresh } = useAuth();
@@ -271,6 +281,24 @@ export function SupabaseAuthUI({
               style={styles.input}
               required
             />
+            {onForgotPasswordClick && (
+              <p
+                style={{
+                  ...styles.toggleRow,
+                  marginTop: 4,
+                  textAlign: "right",
+                }}
+              >
+                <button
+                  type="button"
+                  style={styles.toggleButton}
+                  onClick={onForgotPasswordClick}
+                  disabled={pending}
+                >
+                  Forgot password?
+                </button>
+              </p>
+            )}
           </div>
         )}
         <button type="submit" disabled={pending} style={styles.button}>

@@ -457,6 +457,61 @@ describe("<SupabaseAuthUI>", () => {
     });
   });
 
+  describe("onForgotPasswordClick prop", () => {
+    it("renders 'Forgot password?' button when onForgotPasswordClick provided AND mode=password", () => {
+      const adapter = buildAdapter();
+      const onForgotPasswordClick = vi.fn();
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          mode="password"
+          onForgotPasswordClick={onForgotPasswordClick}
+        />,
+      );
+      const link = screen.getByRole("button", { name: /forgot password/i });
+      expect(link).toBeInTheDocument();
+      expect(link.tagName).toBe("BUTTON");
+      expect(link.getAttribute("type")).toBe("button");
+    });
+
+    it("calls onForgotPasswordClick when clicked", () => {
+      const adapter = buildAdapter();
+      const onForgotPasswordClick = vi.fn();
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          mode="password"
+          onForgotPasswordClick={onForgotPasswordClick}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /forgot password/i }));
+      expect(onForgotPasswordClick).toHaveBeenCalled();
+    });
+
+    it("does NOT render 'Forgot password?' button when prop is omitted", () => {
+      const adapter = buildAdapter();
+      render(<SupabaseAuthUI adapter={adapter} mode="password" />);
+      expect(
+        screen.queryByRole("button", { name: /forgot password/i }),
+      ).toBeNull();
+    });
+
+    it("does NOT render 'Forgot password?' button in magic-link mode (even if prop provided)", () => {
+      const adapter = buildAdapter();
+      const onForgotPasswordClick = vi.fn();
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          mode="magicLink"
+          onForgotPasswordClick={onForgotPasswordClick}
+        />,
+      );
+      expect(
+        screen.queryByRole("button", { name: /forgot password/i }),
+      ).toBeNull();
+    });
+  });
+
   describe("containerStyle prop", () => {
     function getWrapperDiv() {
       // The form is rendered inside the wrapper div; walk up from a known child.
