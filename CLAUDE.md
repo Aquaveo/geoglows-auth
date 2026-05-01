@@ -15,7 +15,8 @@
 ## Key Files
 - `src/types.ts` — `AuthUser`, `AuthAdapter`, `Profile`, `UserType` enum, `AccountSummary` (currently `{ profile }`)
 - `src/core/index.ts` — barrel for the `core` entry point
-- `src/core/cognito.ts` — `createOidcAuthAdapter` (Cognito OIDC implementation, `oidc-client-ts`)
+- `src/core/cognito.ts` — `createOidcAuthAdapter` (Cognito OIDC implementation, `oidc-client-ts`). Still shipped but no production consumer uses it as of 2026-04-30
+- `src/core/recovery-url.ts` — `detectRecoveryUrlState` synchronous URL parser used by consumers at module-load to detect recovery flow before Supabase JS consumes the hash (added 1.3.0)
 - `src/core/supabase-auth.ts` — `createSupabaseAuthAdapter` (Supabase Auth implementation)
 - `src/core/supabase.ts` — `createGeoglowsSupabaseClient` factory; the `useIdToken` flag was removed in 0.2.0 (Cognito sessions are no longer forwarded as bearer tokens to PostgREST — Supabase Auth uses its own access token)
 - `src/core/session.ts` — `bootstrapSession`, `getUserDisplayInfo`, `SessionStatus`/`SessionState`
@@ -52,6 +53,6 @@
 
 ## Consumers
 - `apps.geoglows` (vanilla JS, uses `core` surface, currently on Supabase Auth)
-- `aquiferx` (React, uses `react` surface, currently on Cognito)
+- `aquiferx` (React, uses `react` surface, on Supabase Auth as of the 2026-04-29 migration; the dual-mode AuthAdapter remains shipped but every active portal consumer uses Supabase Auth in production)
 
 Both adapters remain shipped — the library is dual-mode by design. The product direction (per `apps.geoglows/docs/plans/2026-04-28-002-refactor-cognito-to-supabase-auth-plan.md`) is consolidation on Supabase Auth, but consumers migrate at their own pace

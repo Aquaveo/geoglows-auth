@@ -7,3 +7,4 @@ export * from "./session";
 export * from "./escape";
 export * from "./auth-action";
 export * from "./sign-in";
+export * from "./recovery-url";
