@@ -5,6 +5,99 @@ All notable changes to `@aquaveo/geoglows-auth` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] — 2026-04-30
+
+### Added — `<SupabaseAuthUI>` parity with vanilla `mountSignInModal`
+
+The React `<SupabaseAuthUI>` component is rewritten to match the
+vanilla portal modal in both look and capability:
+
+- **Google + GitHub OAuth buttons** above the email form, separated
+  by an "or with email" divider. `adapter.signInWithOAuth({ provider,
+  redirectTo })` is called; the clicked button shows "Signing in…"
+  and both OAuth buttons disable until navigation fires or an error
+  is caught. Pending state resets on the `pageshow` event so the
+  form recovers cleanly when the user hits browser-back from the
+  OAuth provider (bfcache restore).
+- **Sign-up state machine.** When `allowSignUp=true` (default), the
+  signIn view shows a "New here? Create an account" toggle. Clicking
+  it switches to a sign-up form with first/last name + email +
+  password. Submission calls `adapter.signUpWithPassword` with
+  `metadata: { first_name, last_name }`. Success transitions to a
+  `signUpSent` "Check your email" confirmation view; "Back to sign
+  in" returns to the sign-in form with the sign-up email pre-filled
+  so the user can sign in immediately if they confirmed in another
+  tab.
+- **Visual restyle via `sign-in.css` reuse.** All inline `style={}`
+  references are replaced with `className=` references to the
+  existing `geoglows-signin-*` classes. Single source of truth for
+  the visual treatment across vanilla and React surfaces. Consumers
+  must `import "@aquaveo/geoglows-auth/core/sign-in.css"` once at
+  app entry to see the new visuals.
+- **`sanitizeHref` defensive scheme blocking on `oauthRedirectTo`
+  and `emailRedirectTo`.** Dangerous URL schemes (`javascript:`,
+  `data:`, `vbscript:`) fall back to `window.location.origin` with
+  a `console.warn`. Same security control as the 1.4.0 `profileHref`
+  work.
+- **`onClose` prop.** When provided, the modal header renders a
+  close (×) button that fires the callback. The lib does NOT call
+  any kind of `dialog.close()` itself — `onClose` is the only
+  side-effect of clicking the X. This contract lets consumers
+  preserve outer-`<dialog>` close-event cleanup paths (e.g.,
+  aquiferx's recovery-session cleanup).
+
+### Breaking changes
+
+- **`emailRedirectTo` is required when `allowSignUp` is `true` (or
+  omitted, since `true` is the default).** Discriminated union
+  enforces this at the type level. Consumers who don't want sign-up
+  pass `allowSignUp={false}` explicitly. There is no silent default
+  for `emailRedirectTo` — sub-app consumers who forgot to pass it
+  would have landed sign-up confirmations on the wrong origin.
+- **`containerStyle` prop removed.** The CSS-class migration replaces
+  the inline-style override mechanism. Consumers wanting custom
+  styling override via CSS targeting `.geoglows-signin-content`,
+  `.geoglows-signin-confirmation`, or specific inner classes.
+- **Default visual treatment changed.** Consumers who imported
+  `<SupabaseAuthUI>` but did NOT import `sign-in.css` will see
+  unstyled output (CSS classes with no styles attached). To preserve
+  the previous look they must add `import "@aquaveo/geoglows-auth/core/sign-in.css"`.
+
+### Security invariant documented
+
+- **`user_metadata` is render-untrusted at all sites.** Sign-up
+  metadata flows into Supabase `user_metadata`, then into
+  `core.profiles` via `ensureProfile` on first creation. Vanilla
+  render sites must `escapeHtml(...)` these fields; React render
+  sites rely on JSX auto-escape. Future `ensureProfile` modifications
+  or new render sites must preserve this. Documented in this file
+  and in `src/core/profile.ts`.
+
+### Cross-surface coupling acknowledged
+
+- Visuals for `<SupabaseAuthUI>` and the vanilla `mountSignInModal`
+  are now defined in the same `sign-in.css` file. A future redesign
+  of either surface affects both unless the file is split. Trade-off
+  is intentional: parity today justifies the coupling. If divergence
+  is ever needed, that's a separate plan.
+
+### Operational note: OAuth on Vercel preview branches
+
+`oauthRedirectTo` defaults to `window.location.origin`, which on
+Vercel preview branches is a unique per-PR origin (e.g.,
+`<repo>-git-<branch>-<owner>.vercel.app`). Supabase Auth's redirect
+allowlist matches strict strings; preview-branch OAuth fails with
+`redirect_uri_mismatch` (surfaced as `GENERIC_OAUTH_ERROR`).
+Production smoke is the supported test path. Document this in your
+consuming app's CLAUDE.md if OAuth is wired.
+
+### Tests
+
+- 24 new `tests/react/SupabaseAuthUI.test.tsx` cases covering OAuth
+  (5), sign-up flow (8), `signUpSent` view (1), `onClose` prop (5),
+  CSS class migration (2), and other view-machine transitions.
+- 267/267 tests pass (was 243 before this release).
+
 ## [1.4.0] — 2026-04-30
 
 ### Added — Configurable Profile link target + scheme sanitization

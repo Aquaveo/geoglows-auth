@@ -46,6 +46,10 @@ function buildAdapter(): MockAdapter {
     signInWithPassword: vi.fn(async () => buildAuthUser()),
     signInWithMagicLink: vi.fn(async () => {}),
     signInWithOAuth: vi.fn(async () => {}),
+    signUpWithPassword: vi.fn(async () => {}),
+    resetPasswordForEmail: vi.fn(async () => {}),
+    updateUserPassword: vi.fn(async () => buildAuthUser()),
+    signOutOtherSessions: vi.fn(async () => {}),
   };
 }
 
@@ -87,7 +91,12 @@ describe("<SupabaseAuthUI>", () => {
       const onSuccess = vi.fn();
 
       render(
-        <SupabaseAuthUI adapter={adapter} mode="password" onSuccess={onSuccess} />,
+        <SupabaseAuthUI
+          adapter={adapter}
+          mode="password"
+          allowSignUp={false}
+          onSuccess={onSuccess}
+        />,
       );
 
       fireEvent.change(getEmailInput(), {
@@ -111,7 +120,9 @@ describe("<SupabaseAuthUI>", () => {
     });
 
     it("shows a validation message when submitted with empty email", async () => {
-      render(<SupabaseAuthUI adapter={adapter} mode="password" />);
+      render(
+        <SupabaseAuthUI adapter={adapter} mode="password" allowSignUp={false} />,
+      );
 
       fireEvent.change(getPasswordInput(), { target: { value: "hunter2" } });
       fireEvent.click(getSubmitButton());
@@ -121,7 +132,9 @@ describe("<SupabaseAuthUI>", () => {
     });
 
     it("shows a validation message when submitted with empty password", async () => {
-      render(<SupabaseAuthUI adapter={adapter} mode="password" />);
+      render(
+        <SupabaseAuthUI adapter={adapter} mode="password" allowSignUp={false} />,
+      );
 
       fireEvent.change(getEmailInput(), {
         target: { value: "user@example.com" },
@@ -133,7 +146,9 @@ describe("<SupabaseAuthUI>", () => {
     });
 
     it("rejects whitespace-only passwords as if empty", () => {
-      render(<SupabaseAuthUI adapter={adapter} mode="password" />);
+      render(
+        <SupabaseAuthUI adapter={adapter} mode="password" allowSignUp={false} />,
+      );
 
       fireEvent.change(getEmailInput(), {
         target: { value: "user@example.com" },
@@ -149,7 +164,9 @@ describe("<SupabaseAuthUI>", () => {
       const user = buildAuthUser();
       adapter.signInWithPassword.mockResolvedValue(user);
 
-      render(<SupabaseAuthUI adapter={adapter} mode="password" />);
+      render(
+        <SupabaseAuthUI adapter={adapter} mode="password" allowSignUp={false} />,
+      );
 
       fireEvent.change(getEmailInput(), {
         target: { value: "user@example.com" },
@@ -175,6 +192,7 @@ describe("<SupabaseAuthUI>", () => {
         <SupabaseAuthUI
           adapter={adapter}
           mode="password"
+          allowSignUp={false}
           onError={onError}
           onSuccess={onSuccess}
         />,
@@ -213,7 +231,12 @@ describe("<SupabaseAuthUI>", () => {
       const onSuccess = vi.fn();
 
       render(
-        <SupabaseAuthUI adapter={adapter} mode="password" onSuccess={onSuccess} />,
+        <SupabaseAuthUI
+          adapter={adapter}
+          mode="password"
+          allowSignUp={false}
+          onSuccess={onSuccess}
+        />,
       );
 
       fireEvent.change(getEmailInput(), {
@@ -242,7 +265,9 @@ describe("<SupabaseAuthUI>", () => {
           }),
       );
 
-      render(<SupabaseAuthUI adapter={adapter} mode="password" />);
+      render(
+        <SupabaseAuthUI adapter={adapter} mode="password" allowSignUp={false} />,
+      );
 
       fireEvent.change(getEmailInput(), {
         target: { value: "user@example.com" },
@@ -258,7 +283,9 @@ describe("<SupabaseAuthUI>", () => {
 
   describe("magic-link mode (locked)", () => {
     it("calls signInWithMagicLink and shows the confirmation state", async () => {
-      render(<SupabaseAuthUI adapter={adapter} mode="magicLink" />);
+      render(
+        <SupabaseAuthUI adapter={adapter} mode="magicLink" allowSignUp={false} />,
+      );
 
       fireEvent.change(getEmailInput(), {
         target: { value: "user@example.com" },
@@ -283,6 +310,7 @@ describe("<SupabaseAuthUI>", () => {
         <SupabaseAuthUI
           adapter={adapter}
           mode="magicLink"
+          allowSignUp={false}
           magicLinkRedirectTo="https://app.example.com/auth/callback"
         />,
       );
@@ -305,6 +333,7 @@ describe("<SupabaseAuthUI>", () => {
         <SupabaseAuthUI
           adapter={adapter}
           mode="magicLink"
+          allowSignUp={false}
           magicLinkSentMessage="Magic link sent — go check Gmail."
         />,
       );
@@ -322,12 +351,16 @@ describe("<SupabaseAuthUI>", () => {
     });
 
     it("does not show a password field in magic-link mode", () => {
-      render(<SupabaseAuthUI adapter={adapter} mode="magicLink" />);
+      render(
+        <SupabaseAuthUI adapter={adapter} mode="magicLink" allowSignUp={false} />,
+      );
       expect(screen.queryByLabelText(/password/i)).toBeNull();
     });
 
     it("validates that email is required before sending", () => {
-      render(<SupabaseAuthUI adapter={adapter} mode="magicLink" />);
+      render(
+        <SupabaseAuthUI adapter={adapter} mode="magicLink" allowSignUp={false} />,
+      );
       fireEvent.click(getSubmitButton());
       expect(screen.getByRole("alert")).toHaveTextContent(/email/i);
       expect(adapter.signInWithMagicLink).not.toHaveBeenCalled();
@@ -339,7 +372,12 @@ describe("<SupabaseAuthUI>", () => {
       const onError = vi.fn();
 
       render(
-        <SupabaseAuthUI adapter={adapter} mode="magicLink" onError={onError} />,
+        <SupabaseAuthUI
+          adapter={adapter}
+          mode="magicLink"
+          allowSignUp={false}
+          onError={onError}
+        />,
       );
 
       fireEvent.change(getEmailInput(), {
@@ -361,7 +399,9 @@ describe("<SupabaseAuthUI>", () => {
     });
 
     it("returns to the form when the user clicks 'Use a different email address' on the confirmation panel", async () => {
-      render(<SupabaseAuthUI adapter={adapter} mode="magicLink" />);
+      render(
+        <SupabaseAuthUI adapter={adapter} mode="magicLink" allowSignUp={false} />,
+      );
 
       fireEvent.change(getEmailInput(), {
         target: { value: "typo@example.com" },
@@ -382,7 +422,9 @@ describe("<SupabaseAuthUI>", () => {
     });
 
     it("does not render the password-toggle button when locked", async () => {
-      render(<SupabaseAuthUI adapter={adapter} mode="magicLink" />);
+      render(
+        <SupabaseAuthUI adapter={adapter} mode="magicLink" allowSignUp={false} />,
+      );
 
       fireEvent.change(getEmailInput(), {
         target: { value: "user@example.com" },
@@ -400,7 +442,7 @@ describe("<SupabaseAuthUI>", () => {
 
   describe("toggle mode (mode prop omitted)", () => {
     it("starts in password mode and exposes a toggle to magic link", () => {
-      render(<SupabaseAuthUI adapter={adapter} />);
+      render(<SupabaseAuthUI adapter={adapter} allowSignUp={false} />);
 
       expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
       expect(
@@ -409,7 +451,7 @@ describe("<SupabaseAuthUI>", () => {
     });
 
     it("switches to magic-link mode when the toggle is clicked, hiding password", () => {
-      render(<SupabaseAuthUI adapter={adapter} />);
+      render(<SupabaseAuthUI adapter={adapter} allowSignUp={false} />);
 
       fireEvent.click(screen.getByRole("button", { name: /magic link/i }));
 
@@ -419,8 +461,8 @@ describe("<SupabaseAuthUI>", () => {
       ).toBeInTheDocument();
     });
 
-    it("clears errors and password when toggling modes", () => {
-      render(<SupabaseAuthUI adapter={adapter} />);
+    it("clears errors and password when toggling to magic-link mode", () => {
+      render(<SupabaseAuthUI adapter={adapter} allowSignUp={false} />);
 
       fireEvent.change(getEmailInput(), {
         target: { value: "user@example.com" },
@@ -438,7 +480,7 @@ describe("<SupabaseAuthUI>", () => {
     });
 
     it("after a successful magic-link send, can toggle back to password mode", async () => {
-      render(<SupabaseAuthUI adapter={adapter} />);
+      render(<SupabaseAuthUI adapter={adapter} allowSignUp={false} />);
 
       fireEvent.click(screen.getByRole("button", { name: /magic link/i }));
       fireEvent.change(getEmailInput(), {
@@ -459,12 +501,12 @@ describe("<SupabaseAuthUI>", () => {
 
   describe("onForgotPasswordClick prop", () => {
     it("renders 'Forgot password?' button when onForgotPasswordClick provided AND mode=password", () => {
-      const adapter = buildAdapter();
       const onForgotPasswordClick = vi.fn();
       render(
         <SupabaseAuthUI
           adapter={adapter}
           mode="password"
+          allowSignUp={false}
           onForgotPasswordClick={onForgotPasswordClick}
         />,
       );
@@ -475,12 +517,12 @@ describe("<SupabaseAuthUI>", () => {
     });
 
     it("calls onForgotPasswordClick when clicked", () => {
-      const adapter = buildAdapter();
       const onForgotPasswordClick = vi.fn();
       render(
         <SupabaseAuthUI
           adapter={adapter}
           mode="password"
+          allowSignUp={false}
           onForgotPasswordClick={onForgotPasswordClick}
         />,
       );
@@ -489,20 +531,21 @@ describe("<SupabaseAuthUI>", () => {
     });
 
     it("does NOT render 'Forgot password?' button when prop is omitted", () => {
-      const adapter = buildAdapter();
-      render(<SupabaseAuthUI adapter={adapter} mode="password" />);
+      render(
+        <SupabaseAuthUI adapter={adapter} mode="password" allowSignUp={false} />,
+      );
       expect(
         screen.queryByRole("button", { name: /forgot password/i }),
       ).toBeNull();
     });
 
     it("does NOT render 'Forgot password?' button in magic-link mode (even if prop provided)", () => {
-      const adapter = buildAdapter();
       const onForgotPasswordClick = vi.fn();
       render(
         <SupabaseAuthUI
           adapter={adapter}
           mode="magicLink"
+          allowSignUp={false}
           onForgotPasswordClick={onForgotPasswordClick}
         />,
       );
@@ -512,41 +555,575 @@ describe("<SupabaseAuthUI>", () => {
     });
   });
 
-  describe("containerStyle prop", () => {
-    function getWrapperDiv() {
-      // The form is rendered inside the wrapper div; walk up from a known child.
-      const form = document.querySelector("form");
-      const wrapper = form?.parentElement;
-      if (!wrapper) throw new Error("Wrapper div not found");
-      return wrapper;
-    }
-
-    it("merges containerStyle into the form-render wrapper div", () => {
+  describe("OAuth providers (1.5.0)", () => {
+    it("renders Google + GitHub buttons in signIn view by default", () => {
       render(
         <SupabaseAuthUI
           adapter={adapter}
-          mode="password"
-          containerStyle={{ background: "rgb(255, 240, 240)", maxWidth: 999 }}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+        />,
+      );
+      expect(
+        screen.getByRole("button", { name: /continue with google/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /continue with github/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("calls signInWithOAuth with provider=google and the default redirect", () => {
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /continue with google/i }),
+      );
+      expect(adapter.signInWithOAuth).toHaveBeenCalledWith({
+        provider: "google",
+        redirectTo: window.location.origin,
+      });
+    });
+
+    it("calls signInWithOAuth with provider=github", () => {
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /continue with github/i }),
+      );
+      expect(adapter.signInWithOAuth).toHaveBeenCalledWith({
+        provider: "github",
+        redirectTo: window.location.origin,
+      });
+    });
+
+    it("forwards oauthRedirectTo when provided", () => {
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+          oauthRedirectTo="https://example.com/oauth-callback"
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /continue with google/i }),
+      );
+      expect(adapter.signInWithOAuth).toHaveBeenCalledWith({
+        provider: "google",
+        redirectTo: "https://example.com/oauth-callback",
+      });
+    });
+
+    it("disables both OAuth buttons while one is pending; clicked shows 'Signing in…'", async () => {
+      let resolveOAuth: () => void = () => {};
+      adapter.signInWithOAuth.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveOAuth = resolve;
+          }),
+      );
+
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
         />,
       );
 
-      const wrapper = getWrapperDiv();
-      // Caller value wins on collisions (maxWidth) and adds new keys (background).
-      expect(wrapper).toHaveStyle({ background: "rgb(255, 240, 240)" });
-      expect(wrapper).toHaveStyle({ maxWidth: "999px" });
-      // Baseline styles still apply where caller did not override.
-      expect(wrapper).toHaveStyle({ padding: "24px" });
+      const googleButton = screen.getByRole("button", {
+        name: /continue with google/i,
+      });
+      fireEvent.click(googleButton);
+
+      await vi.waitFor(() => {
+        expect(screen.getByRole("button", { name: /signing in/i })).toBeInTheDocument();
+      });
+      const githubButton = screen.getByRole("button", {
+        name: /continue with github/i,
+      });
+      expect(googleButton).toBeDisabled();
+      expect(githubButton).toBeDisabled();
+
+      resolveOAuth();
     });
 
-    it("merges containerStyle into the magic-link confirmation wrapper div", async () => {
+    it("rejects javascript: oauthRedirectTo via sanitizeHref and falls back to window.location.origin", () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+          oauthRedirectTo="javascript:alert(1)"
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /continue with google/i }),
+      );
+      expect(adapter.signInWithOAuth).toHaveBeenCalledWith({
+        provider: "google",
+        redirectTo: window.location.origin,
+      });
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("oauthRedirectTo"),
+      );
+    });
+
+    it("shows GENERIC_OAUTH_ERROR and forwards raw error on OAuth failure", async () => {
+      const rawError = new Error("OAuth provider unavailable");
+      adapter.signInWithOAuth.mockRejectedValue(rawError);
+      const onError = vi.fn();
+
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+          onError={onError}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /continue with google/i }),
+      );
+
+      await vi.waitFor(() => {
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          /couldn't start the sign-in flow/i,
+        );
+        expect(screen.getByRole("alert")).not.toHaveTextContent(
+          /provider unavailable/i,
+        );
+      });
+      expect(onError).toHaveBeenCalledWith(rawError);
+      // Buttons re-enabled after error.
+      await vi.waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /continue with google/i }),
+        ).not.toBeDisabled();
+      });
+    });
+
+    it("resets OAuth pending state on pageshow event (browser back from OAuth provider)", async () => {
+      let resolveOAuth: () => void = () => {};
+      adapter.signInWithOAuth.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveOAuth = resolve;
+          }),
+      );
+
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /continue with google/i }),
+      );
+      await vi.waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /signing in/i }),
+        ).toBeInTheDocument();
+      });
+
+      // Fire pageshow event (simulating bfcache restore).
+      window.dispatchEvent(new Event("pageshow"));
+
+      await vi.waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /continue with google/i }),
+        ).not.toBeDisabled();
+      });
+      resolveOAuth();
+    });
+
+    it("hides OAuth row when mode is locked to magicLink", () => {
+      render(
+        <SupabaseAuthUI adapter={adapter} mode="magicLink" allowSignUp={false} />,
+      );
+      // Magic-link locked = no OAuth (matches vanilla which has no magic-link).
+      expect(
+        screen.queryByRole("button", { name: /continue with google/i }),
+      ).toBeNull();
+    });
+  });
+
+  describe("sign-up flow (1.5.0)", () => {
+    it("renders 'Create an account' toggle when allowSignUp=true (default)", () => {
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+        />,
+      );
+      expect(
+        screen.getByRole("button", { name: /create an account/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("does NOT render sign-up toggle when allowSignUp=false", () => {
+      render(<SupabaseAuthUI adapter={adapter} allowSignUp={false} />);
+      expect(
+        screen.queryByRole("button", { name: /create an account/i }),
+      ).toBeNull();
+    });
+
+    it("does NOT render sign-up toggle when mode is locked to magicLink", () => {
       render(
         <SupabaseAuthUI
           adapter={adapter}
           mode="magicLink"
-          containerStyle={{ background: "rgb(240, 255, 240)" }}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
         />,
       );
+      expect(
+        screen.queryByRole("button", { name: /create an account/i }),
+      ).toBeNull();
+    });
 
+    it("clicking 'Create an account' switches to signUp view with first/last name fields", () => {
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /create an account/i }),
+      );
+      expect(screen.getByLabelText(/first name/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/last name/i)).toBeInTheDocument();
+      // OAuth row hidden in signUp view.
+      expect(
+        screen.queryByRole("button", { name: /continue with google/i }),
+      ).toBeNull();
+      // Magic-link toggle hidden in signUp view.
+      expect(
+        screen.queryByRole("button", { name: /magic link/i }),
+      ).toBeNull();
+    });
+
+    it("submits sign-up with metadata and transitions to signUpSent view", async () => {
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /create an account/i }),
+      );
+
+      fireEvent.change(screen.getByLabelText(/first name/i), {
+        target: { value: "Ada" },
+      });
+      fireEvent.change(screen.getByLabelText(/last name/i), {
+        target: { value: "Lovelace" },
+      });
+      fireEvent.change(getEmailInput(), {
+        target: { value: "  ada@example.com  " },
+      });
+      fireEvent.change(getPasswordInput(), { target: { value: "hunter2" } });
+      fireEvent.click(getSubmitButton());
+
+      await vi.waitFor(() => {
+        expect(adapter.signUpWithPassword).toHaveBeenCalledWith({
+          email: "ada@example.com",
+          password: "hunter2",
+          emailRedirectTo: "https://example.com/profile",
+          metadata: { first_name: "Ada", last_name: "Lovelace" },
+        });
+      });
+
+      // signUpSent view renders.
+      await vi.waitFor(() => {
+        expect(
+          screen.getByRole("heading", { name: /check your email/i }),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("validates required fields on sign-up submit", () => {
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /create an account/i }),
+      );
+
+      // Submit with everything empty.
+      fireEvent.click(getSubmitButton());
+      expect(screen.getByRole("alert")).toHaveTextContent(/first name/i);
+      expect(adapter.signUpWithPassword).not.toHaveBeenCalled();
+    });
+
+    it("shows GENERIC_SIGNUP_ERROR and forwards raw error on sign-up failure; clears password, preserves names", async () => {
+      const rawError = new Error("User already registered");
+      adapter.signUpWithPassword.mockRejectedValue(rawError);
+      const onError = vi.fn();
+
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+          onError={onError}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /create an account/i }),
+      );
+
+      const firstNameInput = screen.getByLabelText(/first name/i) as HTMLInputElement;
+      const lastNameInput = screen.getByLabelText(/last name/i) as HTMLInputElement;
+      fireEvent.change(firstNameInput, { target: { value: "Ada" } });
+      fireEvent.change(lastNameInput, { target: { value: "Lovelace" } });
+      fireEvent.change(getEmailInput(), {
+        target: { value: "ada@example.com" },
+      });
+      fireEvent.change(getPasswordInput(), { target: { value: "hunter2" } });
+      fireEvent.click(getSubmitButton());
+
+      await vi.waitFor(() => {
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          /couldn't create your account/i,
+        );
+      });
+      expect(onError).toHaveBeenCalledWith(rawError);
+      // Password cleared, name fields preserved.
+      expect(getPasswordInput().value).toBe("");
+      expect(firstNameInput.value).toBe("Ada");
+      expect(lastNameInput.value).toBe("Lovelace");
+    });
+
+    it("rejects javascript: emailRedirectTo via sanitizeHref and falls back to window.location.origin", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo={"javascript:alert(1)" as string}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /create an account/i }),
+      );
+
+      fireEvent.change(screen.getByLabelText(/first name/i), {
+        target: { value: "Ada" },
+      });
+      fireEvent.change(screen.getByLabelText(/last name/i), {
+        target: { value: "Lovelace" },
+      });
+      fireEvent.change(getEmailInput(), {
+        target: { value: "ada@example.com" },
+      });
+      fireEvent.change(getPasswordInput(), { target: { value: "hunter2" } });
+      fireEvent.click(getSubmitButton());
+
+      await vi.waitFor(() => {
+        expect(adapter.signUpWithPassword).toHaveBeenCalledWith(
+          expect.objectContaining({
+            emailRedirectTo: window.location.origin,
+          }),
+        );
+      });
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("emailRedirectTo"),
+      );
+    });
+
+    it("clicking '← Back' in signUp view returns to signIn with name fields cleared", () => {
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /create an account/i }),
+      );
+      fireEvent.change(screen.getByLabelText(/first name/i), {
+        target: { value: "Ada" },
+      });
+      fireEvent.change(screen.getByLabelText(/last name/i), {
+        target: { value: "Lovelace" },
+      });
+      // Click the Back link.
+      fireEvent.click(screen.getByRole("button", { name: /^← back$/i }));
+
+      // Back to signIn view: password input visible, name inputs gone.
+      expect(screen.queryByLabelText(/first name/i)).toBeNull();
+      expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+    });
+
+    it("clicking 'Back to sign in' from signUpSent returns to signIn with email preserved, password cleared", async () => {
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /create an account/i }),
+      );
+      fireEvent.change(screen.getByLabelText(/first name/i), {
+        target: { value: "Ada" },
+      });
+      fireEvent.change(screen.getByLabelText(/last name/i), {
+        target: { value: "Lovelace" },
+      });
+      fireEvent.change(getEmailInput(), {
+        target: { value: "ada@example.com" },
+      });
+      fireEvent.change(getPasswordInput(), { target: { value: "hunter2" } });
+      fireEvent.click(getSubmitButton());
+
+      await vi.waitFor(() => {
+        expect(screen.getByRole("status")).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: /back to sign in/i }));
+
+      // Back to signIn view: email preserved, password input present and empty.
+      expect(getEmailInput().value).toBe("ada@example.com");
+      expect(getPasswordInput().value).toBe("");
+    });
+  });
+
+  describe("onClose prop (1.5.0)", () => {
+    it("renders close (×) button when onClose is provided", () => {
+      const onClose = vi.fn();
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp={false}
+          onClose={onClose}
+        />,
+      );
+      expect(
+        screen.getByRole("button", { name: /close/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("does NOT render close button when onClose is omitted", () => {
+      render(<SupabaseAuthUI adapter={adapter} allowSignUp={false} />);
+      expect(screen.queryByRole("button", { name: /close/i })).toBeNull();
+    });
+
+    it("calls onClose exactly once when the close button is clicked (no other side effects)", () => {
+      const onClose = vi.fn();
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp={false}
+          onClose={onClose}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /close/i }));
+      // The lib does NOT call dialog.close() itself — onClose is the only
+      // side-effect. This contract lets consumers (like aquiferx) keep their
+      // outer-<dialog> close-event cleanup paths working.
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("renders close button in signUp view when onClose is provided", () => {
+      const onClose = vi.fn();
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+          onClose={onClose}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /create an account/i }),
+      );
+      expect(
+        screen.getByRole("button", { name: /close/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("renders close button in signUpSent view when onClose is provided", async () => {
+      const onClose = vi.fn();
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+          onClose={onClose}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /create an account/i }),
+      );
+      fireEvent.change(screen.getByLabelText(/first name/i), {
+        target: { value: "Ada" },
+      });
+      fireEvent.change(screen.getByLabelText(/last name/i), {
+        target: { value: "Lovelace" },
+      });
+      fireEvent.change(getEmailInput(), {
+        target: { value: "ada@example.com" },
+      });
+      fireEvent.change(getPasswordInput(), { target: { value: "hunter2" } });
+      fireEvent.click(getSubmitButton());
+
+      await vi.waitFor(() => {
+        expect(screen.getByRole("status")).toBeInTheDocument();
+      });
+      expect(
+        screen.getByRole("button", { name: /close/i }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe("CSS class migration (1.5.0)", () => {
+    it("renders form using geoglows-signin-* classes (not inline styles)", () => {
+      render(
+        <SupabaseAuthUI
+          adapter={adapter}
+          allowSignUp
+          emailRedirectTo="https://example.com/profile"
+        />,
+      );
+      // Spot-check key classes are present — the visual restyle relies on
+      // sign-in.css being imported at app entry.
+      expect(document.querySelector(".geoglows-signin-content")).not.toBeNull();
+      expect(document.querySelector(".geoglows-signin-form")).not.toBeNull();
+      expect(document.querySelector(".geoglows-signin-providers")).not.toBeNull();
+      expect(document.querySelector(".geoglows-signin-divider")).not.toBeNull();
+      expect(document.querySelector(".geoglows-signin-submit")).not.toBeNull();
+    });
+
+    it("magic-link confirmation uses geoglows-signin-confirmation classes (not legacy gray box)", async () => {
+      render(<SupabaseAuthUI adapter={adapter} allowSignUp={false} />);
+
+      fireEvent.click(screen.getByRole("button", { name: /magic link/i }));
       fireEvent.change(getEmailInput(), {
         target: { value: "user@example.com" },
       });
@@ -555,11 +1132,12 @@ describe("<SupabaseAuthUI>", () => {
       await vi.waitFor(() => {
         expect(screen.getByRole("status")).toBeInTheDocument();
       });
-
-      const status = screen.getByRole("status");
-      const wrapper = status.parentElement!;
-      expect(wrapper).toHaveStyle({ background: "rgb(240, 255, 240)" });
-      expect(wrapper).toHaveStyle({ padding: "24px" });
+      expect(
+        document.querySelector(".geoglows-signin-confirmation"),
+      ).not.toBeNull();
+      expect(
+        document.querySelector(".geoglows-signin-confirmation-back"),
+      ).not.toBeNull();
     });
   });
 });
