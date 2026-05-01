@@ -9,3 +9,4 @@ export * from "./ProfileSetupForm";
 export * from "./ProfileEditForm";
 export * from "./ProfileCompletionBanner";
 export * from "./PasswordResetForm";
+export * from "./SetNewPasswordForm";
