@@ -20,6 +20,7 @@
 - `src/core/escape.ts` — `escapeHtml` for vanilla template-string discipline; `sanitizeHref` (added 1.4.0) returns `null` for dangerous URL schemes (`javascript:`, `data:`, `vbscript:`) so href props can be configurable without making the consumer responsible for scheme validation
 - `src/core/auth-action.ts` — `renderAuthAction(state, options?)`. `AuthActionOptions.profileHref` (added 1.4.0) configures the Profile link target; default `#profile` for backward compat. Sub-apps that want the link to navigate to the portal pass an absolute or root-relative URL; pass `null` to omit the link
 - `src/react/UserMenu.tsx` — `<UserMenu profileHref?>` (prop added 1.4.0) renders a Profile link in the dropdown; default `undefined` (no link)
+- `src/react/SupabaseAuthUI.tsx` — sign-in form with full vanilla-modal parity (1.5.0): Google + GitHub OAuth, sign-up state machine (`signUp` + `signUpSent` views), `onClose` for consumer-driven close X, `sanitizeHref` on `oauthRedirectTo`/`emailRedirectTo`. Discriminated union: `emailRedirectTo` required when `allowSignUp` is `true` or omitted. Visuals via `sign-in.css` classes; consumers must `import "@aquaveo/geoglows-auth/core/sign-in.css"` at app entry. The lib NEVER calls `dialog.close()` itself — `onClose` is the only side-effect of clicking the X (preserves consumer close-event cleanup paths).
 - `src/core/supabase-auth.ts` — `createSupabaseAuthAdapter` (Supabase Auth implementation)
 - `src/core/supabase.ts` — `createGeoglowsSupabaseClient` factory; the `useIdToken` flag was removed in 0.2.0 (Cognito sessions are no longer forwarded as bearer tokens to PostgREST — Supabase Auth uses its own access token)
 - `src/core/session.ts` — `bootstrapSession`, `getUserDisplayInfo`, `SessionStatus`/`SessionState`
@@ -35,6 +36,7 @@
 - `Profile` interface is the source of truth for the `profiles` table shape; UI components compose against this type
 - The `display_name` column is computed from name parts (`first_name + middle_name + last_name`) by `updateProfile` and used as the navbar fallback. It is NOT user-editable directly
 - `user_metadata` is auth-time identity, NOT the profile of record. See `docs/solutions/best-practices/user-metadata-is-auth-identity-not-profile-of-record-2026-04-29.md`
+- `user_metadata` is render-untrusted at all sites (security invariant). Sign-up metadata flows into Supabase `user_metadata` → seeded into `core.profiles` by `ensureProfile` → rendered in vanilla via `escapeHtml(...)` and in React via JSX auto-escape. Any future `ensureProfile` modifications or new render sites MUST preserve this discipline; the React surface uses `sanitizeHref` for href-shaped consumer props (`profileHref`, `oauthRedirectTo`, `emailRedirectTo`) for the same reason
 - Tests assert observable behavior, not call shape — for write paths, seed a row first and assert that the row state is correct after the function runs (see the `ensureProfile` regression test added in 0.3.1)
 
 ## Commands
