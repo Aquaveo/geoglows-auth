@@ -5,6 +5,52 @@ All notable changes to `@aquaveo/geoglows-auth` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] — 2026-04-30
+
+### Added — Configurable Profile link target + scheme sanitization
+
+Sub-apps (grace, rfs, aquiferx) need the avatar-dropdown Profile link
+to point at the portal's profile page rather than the hardcoded
+`#profile` hash that only resolves on apps.geoglows. 1.4.0 makes the
+target configurable on both vanilla and React surfaces and adds a
+proactive scheme sanitizer so dangerous URLs are refused at the
+library level.
+
+- **`renderAuthAction(state, options?)` — second `options` argument**
+  with `profileHref?: string | null`. Default `"#profile"` (UNCHANGED
+  — apps.geoglows behavior is preserved without any code change). Pass
+  a string to override the href; pass `null` to omit the Profile link
+  entirely. Backward-compatible signature: existing callers
+  `renderAuthAction(state)` continue to work and produce identical HTML.
+- **`AuthActionOptions` exported type** — `{ profileHref?: string | null }`.
+- **`<UserMenu>` `profileHref?: string | null` prop** — adds an
+  optional Profile link to the React dropdown (which previously had
+  email + Log out only). Default `undefined` (no link rendered) so
+  existing aquiferx behavior is unchanged unless the prop is passed.
+- **`sanitizeHref(value)` from `core/escape`** — exported helper that
+  returns `null` for null/undefined/empty input OR for dangerous URL
+  schemes (`javascript:`, `data:`, `vbscript:`, case-insensitive,
+  leading-whitespace tolerant). Returns the original value otherwise.
+  Both vanilla and React surfaces apply this to `profileHref` so the
+  consumer is NOT responsible for blocking dangerous schemes — the
+  library refuses them proactively. Caller is still responsible for
+  HTML-escaping the returned value with `escapeHtml` before
+  interpolating into a vanilla template string.
+
+### No behavioral default change
+
+The vanilla `renderAuthAction` default remains `"#profile"`. No
+consumer breaks without explicit code changes; this is a purely
+additive minor release per semver.
+
+### Tests
+
+- 11 new `tests/core/auth-action.test.ts` cases (Profile link config +
+  scheme sanitization).
+- 6 new `tests/core/escape.test.ts` cases (`sanitizeHref`).
+- 11 new `tests/react/UserMenu.test.tsx` cases.
+- 243/243 tests pass (was 215 before this release).
+
 ## [1.3.0] — 2026-04-30
 
 ### Added — React-side forgot-password flow

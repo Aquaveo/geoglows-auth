@@ -17,6 +17,9 @@
 - `src/core/index.ts` — barrel for the `core` entry point
 - `src/core/cognito.ts` — `createOidcAuthAdapter` (Cognito OIDC implementation, `oidc-client-ts`). Still shipped but no production consumer uses it as of 2026-04-30
 - `src/core/recovery-url.ts` — `detectRecoveryUrlState` synchronous URL parser used by consumers at module-load to detect recovery flow before Supabase JS consumes the hash (added 1.3.0)
+- `src/core/escape.ts` — `escapeHtml` for vanilla template-string discipline; `sanitizeHref` (added 1.4.0) returns `null` for dangerous URL schemes (`javascript:`, `data:`, `vbscript:`) so href props can be configurable without making the consumer responsible for scheme validation
+- `src/core/auth-action.ts` — `renderAuthAction(state, options?)`. `AuthActionOptions.profileHref` (added 1.4.0) configures the Profile link target; default `#profile` for backward compat. Sub-apps that want the link to navigate to the portal pass an absolute or root-relative URL; pass `null` to omit the link
+- `src/react/UserMenu.tsx` — `<UserMenu profileHref?>` (prop added 1.4.0) renders a Profile link in the dropdown; default `undefined` (no link)
 - `src/core/supabase-auth.ts` — `createSupabaseAuthAdapter` (Supabase Auth implementation)
 - `src/core/supabase.ts` — `createGeoglowsSupabaseClient` factory; the `useIdToken` flag was removed in 0.2.0 (Cognito sessions are no longer forwarded as bearer tokens to PostgREST — Supabase Auth uses its own access token)
 - `src/core/session.ts` — `bootstrapSession`, `getUserDisplayInfo`, `SessionStatus`/`SessionState`
