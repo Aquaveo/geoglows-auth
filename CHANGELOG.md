@@ -5,6 +5,75 @@ All notable changes to `@aquaveo/geoglows-auth` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] — 2026-04-30
+
+### Added — React-side forgot-password flow
+
+The vanilla forgot-password flow shipped in 1.2.0 (modal-based for
+apps.geoglows + grace + rfs). 1.3.0 adds React-side primitives so
+aquiferx (the React consumer) can wire the same flow into its own
+dialog without copy-pasting modal logic.
+
+- **`<PasswordResetForm>`** — React component for requesting a
+  password-reset email. Accepts `adapter`, optional `redirectTo`,
+  `onSuccess(email)` / `onError` / `onCancel` callbacks. The component
+  does NOT render its own "check your email" view — consumer handles
+  the post-success view (matches the consumer-driven pattern from
+  `<SupabaseAuthUI>`).
+- **`<SetNewPasswordForm>`** — React component for the post-recovery
+  set-new-password step. Accepts `adapter`, `onSuccess` / `onExpired`
+  (recovery-session expired) / `onError` / `onCancel` callbacks. Reads
+  the recovery user's email via `adapter.getCurrentUser()` in a
+  `useEffect` on mount and renders "Resetting password for `<email>`"
+  in the header (wrong-account protection, mirrors vanilla 1.2.0). Runs
+  the full `updateUserPassword` → `signOutOtherSessions` → success
+  message → `onSuccess` sequence; success-linger `setTimeout` is
+  cleaned up on unmount so dismissing during the linger does NOT fire
+  `onSuccess` against torn-down state.
+- **`<SupabaseAuthUI>` `onForgotPasswordClick?` prop** — renders a
+  "Forgot password?" `<button type="button">` link below the password
+  input when both the prop is provided AND `mode === "password"`. Click
+  fires the callback; consumer decides what to render next. No internal
+  view-switching. Backward-compatible default behavior when prop is
+  omitted.
+- **`detectRecoveryUrlState({ hash, search })` from `core/recovery-url`** —
+  synchronous URL-state detector. Returns `"valid" | "expired" |
+  "pkce-unsupported" | "none"` based on the URL contents. Used at
+  module-load time, BEFORE Supabase JS's `_initialize()` consumes the
+  hash, to detect recovery scenarios race-proof. Pure function; no
+  Supabase dependency, no React dependency. Reusable across vanilla and
+  React consumers.
+
+### Public types
+
+`PasswordResetFormProps`, `SetNewPasswordFormProps`,
+`RecoveryUrlState`, `UrlParts`.
+
+### Tests
+
+- 11 new `tests/core/recovery-url.test.ts` cases.
+- 7 new `tests/react/PasswordResetForm.test.tsx` cases.
+- 10 new `tests/react/SetNewPasswordForm.test.tsx` cases.
+- 4 new `tests/react/SupabaseAuthUI.test.tsx` cases (forgot-password
+  button rendering + click).
+- 213/213 tests pass (was 181 before this release).
+
+### Why minor (not patch)
+
+Purely additive vs 1.2.0 — new React component exports,
+`<SupabaseAuthUI>` gains an optional callback prop with a backward-
+compatible default, new lib export from `core/recovery-url`. Existing
+1.2.0 surfaces unchanged. Consumers on `^1.2.0` pick this up
+automatically via caret-range.
+
+### Vanilla forgot-password unchanged
+
+`mountSignInModal` (1.2.0 in-modal recovery views) is untouched. Vanilla
+consumers do not need to change anything to consume 1.3.0. The new
+React primitives are React-only — vanilla cannot consume React
+components, so the surfaces stay separate (this is documented architectural
+divergence, not architectural debt).
+
 ## [1.2.0] — 2026-04-30
 
 ### Added — forgot-password flow (`core` consumer)
