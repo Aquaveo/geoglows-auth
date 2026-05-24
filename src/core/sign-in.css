@@ -47,7 +47,8 @@
 }
 .geoglows-signin-title {
   font-size: 1.25rem;
-  font-weight: 700;
+  font-weight: 400;
+  font-family: 'Playfair Display', Georgia, serif;
   margin: 0;
 }
 .geoglows-signin-close {
@@ -87,6 +88,7 @@
   justify-content: center;
   gap: 0.75rem;
   padding: 0.625rem 1rem;
+  min-height: 44px;
   border-radius: 0.75rem;
   border: 1px solid #e2e8f0;
   background: #ffffff;
@@ -170,6 +172,7 @@
 .geoglows-signin-submit {
   width: 100%;
   padding: 0.625rem 1rem;
+  min-height: 44px;
   border-radius: 0.75rem;
   border: 0;
   background: #2563eb;
@@ -219,6 +222,7 @@
 .geoglows-signin-confirmation-back {
   width: 100%;
   padding: 0.625rem 1rem;
+  min-height: 44px;
   border-radius: 0.75rem;
   border: 0;
   background: #f1f5f9;
@@ -256,6 +260,9 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
+@media (prefers-reduced-motion: reduce) {
+  .geoglows-auth-action-loading-dot { animation: none; }
+}
 
 .geoglows-auth-action-signin {
   padding: 0.5rem 1rem;
@@ -282,7 +289,7 @@
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 9999px;
-  background: linear-gradient(to bottom right, #3b82f6, #22d3ee);
+  background: #2563eb;
   color: #ffffff;
   font-size: 0.875rem;
   font-weight: 700;
@@ -361,62 +368,64 @@
   cursor: not-allowed;
 }
 
-/* --- Dark theme overrides (opt-in via [data-theme="dark"] on an ancestor) --- */
+/* --- Dark theme overrides ---
+ * Matches both Tailwind's `.dark` class convention (apps.geoglows, grace, rfs)
+ * and the `[data-theme="dark"]` attribute for generic consumers. */
 
-[data-theme="dark"] .geoglows-signin-modal {
+:is([data-theme="dark"], .dark) .geoglows-signin-modal {
   background: #0f172a;
   color: #f1f5f9;
   border-color: #334155;
 }
-[data-theme="dark"] .geoglows-signin-close { color: #94a3b8; }
-[data-theme="dark"] .geoglows-signin-close:hover { color: #e2e8f0; }
-[data-theme="dark"] .geoglows-signin-error {
+:is([data-theme="dark"], .dark) .geoglows-signin-close { color: #94a3b8; }
+:is([data-theme="dark"], .dark) .geoglows-signin-close:hover { color: #e2e8f0; }
+:is([data-theme="dark"], .dark) .geoglows-signin-error {
   color: #fca5a5;
   background: rgba(127, 29, 29, 0.2);
   border-color: rgba(127, 29, 29, 0.4);
 }
-[data-theme="dark"] .geoglows-signin-provider-button {
+:is([data-theme="dark"], .dark) .geoglows-signin-provider-button {
   border-color: #334155;
   background: transparent;
 }
-[data-theme="dark"] .geoglows-signin-provider-button:hover:not(:disabled) {
+:is([data-theme="dark"], .dark) .geoglows-signin-provider-button:hover:not(:disabled) {
   background: #1e293b;
 }
-[data-theme="dark"] .geoglows-signin-divider::before { border-color: #334155; }
-[data-theme="dark"] .geoglows-signin-divider-label {
+:is([data-theme="dark"], .dark) .geoglows-signin-divider::before { border-color: #334155; }
+:is([data-theme="dark"], .dark) .geoglows-signin-divider-label {
   background: #0f172a;
   color: #94a3b8;
 }
-[data-theme="dark"] .geoglows-signin-label { color: #94a3b8; }
-[data-theme="dark"] .geoglows-signin-input {
+:is([data-theme="dark"], .dark) .geoglows-signin-label { color: #94a3b8; }
+:is([data-theme="dark"], .dark) .geoglows-signin-input {
   border-color: #334155;
   background: #020617;
   color: #f1f5f9;
 }
-[data-theme="dark"] .geoglows-signin-toggle-text { color: #94a3b8; }
-[data-theme="dark"] .geoglows-signin-toggle-button { color: #60a5fa; }
-[data-theme="dark"] .geoglows-signin-confirmation-text { color: #cbd5e1; }
-[data-theme="dark"] .geoglows-signin-confirmation-back {
+:is([data-theme="dark"], .dark) .geoglows-signin-toggle-text { color: #94a3b8; }
+:is([data-theme="dark"], .dark) .geoglows-signin-toggle-button { color: #60a5fa; }
+:is([data-theme="dark"], .dark) .geoglows-signin-confirmation-text { color: #cbd5e1; }
+:is([data-theme="dark"], .dark) .geoglows-signin-confirmation-back {
   background: #1e293b;
   color: #f1f5f9;
 }
-[data-theme="dark"] .geoglows-signin-confirmation-back:hover { background: #334155; }
-[data-theme="dark"] .geoglows-auth-action-loading {
+:is([data-theme="dark"], .dark) .geoglows-signin-confirmation-back:hover { background: #334155; }
+:is([data-theme="dark"], .dark) .geoglows-auth-action-loading {
   background: #1e293b;
   color: #cbd5e1;
 }
-[data-theme="dark"] .geoglows-auth-action-menu {
+:is([data-theme="dark"], .dark) .geoglows-auth-action-menu {
   background: #0f172a;
   border-color: #334155;
 }
-[data-theme="dark"] .geoglows-auth-action-menu-header { border-bottom-color: #1e293b; }
-[data-theme="dark"] .geoglows-auth-action-menu-name { color: #f1f5f9; }
-[data-theme="dark"] .geoglows-auth-action-menu-email { color: #94a3b8; }
-[data-theme="dark"] .geoglows-auth-action-menu-link { color: #e2e8f0; }
-[data-theme="dark"] .geoglows-auth-action-menu-link:hover { background: #1e293b; }
-[data-theme="dark"] .geoglows-auth-action-menu-divider { border-top-color: #1e293b; }
-[data-theme="dark"] .geoglows-auth-action-menu-signout { color: #f87171; }
-[data-theme="dark"] .geoglows-auth-action-menu-signout:hover:not(:disabled) {
+:is([data-theme="dark"], .dark) .geoglows-auth-action-menu-header { border-bottom-color: #1e293b; }
+:is([data-theme="dark"], .dark) .geoglows-auth-action-menu-name { color: #f1f5f9; }
+:is([data-theme="dark"], .dark) .geoglows-auth-action-menu-email { color: #94a3b8; }
+:is([data-theme="dark"], .dark) .geoglows-auth-action-menu-link { color: #e2e8f0; }
+:is([data-theme="dark"], .dark) .geoglows-auth-action-menu-link:hover { background: #1e293b; }
+:is([data-theme="dark"], .dark) .geoglows-auth-action-menu-divider { border-top-color: #1e293b; }
+:is([data-theme="dark"], .dark) .geoglows-auth-action-menu-signout { color: #f87171; }
+:is([data-theme="dark"], .dark) .geoglows-auth-action-menu-signout:hover:not(:disabled) {
   background: rgba(127, 29, 29, 0.2);
 }
 
@@ -443,7 +452,7 @@
   background: #f0fdf4;
   border: 1px solid #bbf7d0;
 }
-[data-theme="dark"] .geoglows-signin-success {
+:is([data-theme="dark"], .dark) .geoglows-signin-success {
   color: #86efac;
   background: rgba(20, 83, 45, 0.2);
   border-color: rgba(20, 83, 45, 0.5);

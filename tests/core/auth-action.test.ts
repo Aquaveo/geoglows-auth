@@ -199,7 +199,7 @@ describe("renderAuthAction", () => {
         status: "ready",
       });
       expect(html).not.toMatch(/<button[^>]*id="geoglowsSignOut"[^>]*disabled/);
-      expect(html).toContain("Log out");
+      expect(html).toContain("Sign out");
     });
   });
 

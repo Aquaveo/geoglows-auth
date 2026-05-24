@@ -131,7 +131,7 @@ export function renderAuthAction(
           class="geoglows-auth-action-menu-signout"
           ${action === "signing_out" ? "disabled" : ""}
         >
-          ${action === "signing_out" ? "Signing out…" : "Log out"}
+          ${action === "signing_out" ? "Signing out…" : "Sign out"}
         </button>
       </div>
     </details>
