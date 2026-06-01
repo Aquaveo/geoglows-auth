@@ -152,9 +152,7 @@ core.profiles (
   middle_name text,
   last_name text,
   avatar_url text,
-  phone_number text,
   user_type text,
-  address text,
   user_link text,
   created_at timestamptz,
   updated_at timestamptz

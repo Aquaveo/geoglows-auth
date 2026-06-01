@@ -24,9 +24,7 @@ const filledProfile: Profile = {
   display_name: "Ada Lovelace",
   first_name: "Ada",
   last_name: "Lovelace",
-  phone_number: "+1-555-0001",
   user_type: "researcher",
-  address: "123 Analytical Engine Way",
   user_link: "https://ada.example.com",
 };
 

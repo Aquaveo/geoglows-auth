@@ -11,9 +11,7 @@ export interface ProfileFieldsState {
   first_name: string;
   middle_name: string;
   last_name: string;
-  phone_number: string;
   user_type: UserType | "";
-  address: string;
   user_link: string;
 }
 
@@ -21,9 +19,7 @@ export const EMPTY_PROFILE_FIELDS: ProfileFieldsState = {
   first_name: "",
   middle_name: "",
   last_name: "",
-  phone_number: "",
   user_type: "",
-  address: "",
   user_link: "",
 };
 
@@ -152,20 +148,6 @@ export function ProfileFields({
 
       <div style={styles.row}>
         <div style={styles.field}>
-          <label htmlFor="profile-phone" style={styles.label}>
-            Phone number
-          </label>
-          <input
-            id="profile-phone"
-            type="tel"
-            autoComplete="tel"
-            value={values.phone_number}
-            onChange={handleInput("phone_number")}
-            disabled={disabled}
-            style={styles.input}
-          />
-        </div>
-        <div style={styles.field}>
           <label htmlFor="profile-user-type" style={styles.label}>
             User type
           </label>
@@ -186,19 +168,7 @@ export function ProfileFields({
         </div>
       </div>
 
-      <div style={styles.field}>
-        <label htmlFor="profile-address" style={styles.label}>
-          Address
-        </label>
-        <textarea
-          id="profile-address"
-          autoComplete="street-address"
-          value={values.address}
-          onChange={handleInput("address")}
-          disabled={disabled}
-          style={styles.textarea}
-        />
-      </div>
+
 
       <div style={styles.field}>
         <label htmlFor="profile-link" style={styles.label}>

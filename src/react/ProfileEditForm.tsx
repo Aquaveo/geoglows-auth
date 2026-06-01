@@ -86,9 +86,7 @@ function valuesFromProfile(profile: Profile): ProfileFieldsState {
     first_name: profile.first_name ?? "",
     middle_name: profile.middle_name ?? "",
     last_name: profile.last_name ?? "",
-    phone_number: profile.phone_number ?? "",
     user_type: profile.user_type ?? "",
-    address: profile.address ?? "",
     user_link: profile.user_link ?? "",
   };
 }
@@ -98,9 +96,7 @@ function valuesEqual(a: ProfileFieldsState, b: ProfileFieldsState): boolean {
     a.first_name === b.first_name &&
     a.middle_name === b.middle_name &&
     a.last_name === b.last_name &&
-    a.phone_number === b.phone_number &&
     a.user_type === b.user_type &&
-    a.address === b.address &&
     a.user_link === b.user_link
   );
 }
@@ -157,9 +153,7 @@ export function ProfileEditForm({
         first_name: values.first_name.trim(),
         middle_name: values.middle_name.trim() || null,
         last_name: values.last_name.trim(),
-        phone_number: values.phone_number.trim() || null,
         user_type: (values.user_type || null) as UserType | null,
-        address: values.address.trim() || null,
         user_link: values.user_link.trim() || null,
       });
       onSuccess?.(updated);
