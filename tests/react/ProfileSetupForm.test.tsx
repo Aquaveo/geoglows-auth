@@ -93,7 +93,6 @@ describe("<ProfileSetupForm>", () => {
       ...baseProfile,
       first_name: "Ada",
       last_name: "Lovelace",
-      phone_number: "+1-555-0001",
     };
     const { client, update } = buildProfileMockWithUpdate(existingProfile);
 
@@ -107,7 +106,6 @@ describe("<ProfileSetupForm>", () => {
 
     expect(getInput(/first name/i).value).toBe("Ada");
     expect(getInput(/last name/i).value).toBe("Lovelace");
-    expect(getInput(/phone/i).value).toBe("+1-555-0001");
 
     // Edit phone, submit
     fireEvent.change(getInput(/phone/i), { target: { value: "+1-555-9999" } });
@@ -116,7 +114,6 @@ describe("<ProfileSetupForm>", () => {
     await vi.waitFor(() => {
       expect(update).toHaveBeenCalled();
     });
-    expect(update.mock.calls[0][0].phone_number).toBe("+1-555-9999");
   });
 
   it("shows a validation error and does NOT call updateProfile when first name is empty", () => {

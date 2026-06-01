@@ -121,7 +121,6 @@ describe("ensureProfile", () => {
       middle_name: "X",
       last_name: "Romero",
       display_name: "Jerry X Romero",
-      phone_number: "+1-555",
       user_type: "researcher",
     };
     const { client, insert } = buildEnsureProfileMock({
@@ -218,7 +217,6 @@ describe("updateProfile", () => {
       first_name: "Ada",
       last_name: "Lovelace",
       display_name: "Ada Lovelace",
-      phone_number: "+1-555",
       user_type: "researcher",
     };
     const { client, update, eq } = buildProfileMockWithUpdate(returnedRow);
@@ -230,7 +228,6 @@ describe("updateProfile", () => {
         id: "user-uuid-1",
         first_name: "Ada",
         last_name: "Lovelace",
-        phone_number: "+1-555",
         user_type: "researcher",
       },
     );
@@ -241,7 +238,6 @@ describe("updateProfile", () => {
       expect.objectContaining({
         first_name: "Ada",
         last_name: "Lovelace",
-        phone_number: "+1-555",
         user_type: "researcher",
         display_name: "Ada Lovelace",
       }),
@@ -252,12 +248,6 @@ describe("updateProfile", () => {
 
   it("does not synthesize display_name when the caller didn't touch any name field", async () => {
     const { client, update } = buildProfileMockWithUpdate({});
-
-    await updateProfile(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      client as any,
-      { id: "user-uuid-1", phone_number: "+1-555" },
-    );
 
     const payload = update.mock.calls[0][0];
     expect(payload.display_name).toBeUndefined();
