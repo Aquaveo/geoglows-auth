@@ -107,8 +107,8 @@ describe("<ProfileSetupForm>", () => {
     expect(getInput(/first name/i).value).toBe("Ada");
     expect(getInput(/last name/i).value).toBe("Lovelace");
 
-    // Edit phone, submit
-    fireEvent.change(getInput(/phone/i), { target: { value: "+1-555-9999" } });
+    // Change a field and submit
+    fireEvent.change(getInput(/first name/i), { target: { value: "Adelaide" } });
     fireEvent.click(getSubmitButton());
 
     await vi.waitFor(() => {

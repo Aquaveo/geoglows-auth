@@ -53,7 +53,6 @@ describe("<ProfileEditForm>", () => {
     );
     expect(getInput(/first name/i).value).toBe("Ada");
     expect(getInput(/last name/i).value).toBe("Lovelace");
-    expect(getInput(/phone/i).value).toBe("+1-555-0001");
     expect(getInput(/user type/i).value).toBe("researcher");
   });
 
@@ -164,6 +163,5 @@ describe("<ProfileEditForm>", () => {
     );
     expect(getInput(/first name/i).value).toBe("");
     expect(getInput(/last name/i).value).toBe("");
-    expect(getInput(/phone/i).value).toBe("");
   });
 });

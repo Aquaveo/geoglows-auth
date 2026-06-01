@@ -249,6 +249,12 @@ describe("updateProfile", () => {
   it("does not synthesize display_name when the caller didn't touch any name field", async () => {
     const { client, update } = buildProfileMockWithUpdate({});
 
+    await updateProfile(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      client as any,
+      { id: "user-uuid-1", user_type: "researcher" },
+    );
+
     const payload = update.mock.calls[0][0];
     expect(payload.display_name).toBeUndefined();
   });
