@@ -1,6 +1,6 @@
 {
   "name": "@geoglows/geoglows-auth",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "author": "Aquaveo",
   "description": "Authentication library for GEOGloWS portals",
   "license": "MIT",
@@ -27,6 +27,11 @@
       "require": "./dist/core.cjs"
     },
     "./core/sign-in.css": "./dist/geoglows-auth.css",
+    "./bootstrap": {
+      "types": "./dist/types/bootstrap/index.d.ts",
+      "import": "./dist/bootstrap.js",
+      "require": "./dist/bootstrap.cjs"
+    },
     "./react": {
       "types": "./dist/types/react/index.d.ts",
       "import": "./dist/react.js",
