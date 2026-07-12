@@ -9,6 +9,7 @@ export default defineConfig({
       entry: {
         index: resolve(__dirname, "src/index.ts"),
         core: resolve(__dirname, "src/core/index.ts"),
+        bootstrap: resolve(__dirname, "src/bootstrap/index.ts"),
         react: resolve(__dirname, "src/react/index.ts"),
       },
       formats: ["es", "cjs"],
