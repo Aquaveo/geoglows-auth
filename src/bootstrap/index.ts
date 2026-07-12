@@ -53,6 +53,14 @@ export interface BootstrapAuthConfig {
   mountModal?: boolean;
   /** Window event name that opens the sign-in modal. Default `"geoglows:sign-in-requested"`. */
   signInRequestedEvent?: string;
+  /**
+   * Where OAuth providers redirect back to after sign-in. Default:
+   * `() => location.origin + location.pathname` — i.e. the exact page the user
+   * launched sign-in from (minus hash/query), so a Google sign-in from a
+   * sub-app path returns there instead of the origin root. Must be on the
+   * Supabase Auth redirect allowlist.
+   */
+  oauthRedirectTo?: () => string;
 }
 
 /** Imperative handle returned by {@link bootstrapAuth}. */
@@ -99,6 +107,7 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
     onAuthChange,
     mountModal = true,
     signInRequestedEvent = "geoglows:sign-in-requested",
+    oauthRedirectTo = () => window.location.origin + window.location.pathname,
   } = config;
 
   const profileHref = `${portalUrl}${profilePath}`;
@@ -124,7 +133,9 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
   const resolveSlot = (): HTMLElement | null =>
     typeof slot === "string" ? document.querySelector<HTMLElement>(slot) : slot;
 
-  const signInModal = mountModal ? mountSignInModal({ authAdapter }) : null;
+  const signInModal = mountModal
+    ? mountSignInModal({ authAdapter, oauthRedirectTo: oauthRedirectTo() })
+    : null;
 
   async function signOut(): Promise<void> {
     authState = { ...authState, action: "signing_out" };
