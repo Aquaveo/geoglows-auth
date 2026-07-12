@@ -1,200 +1,80 @@
-# @aquaveo/geoglows-auth
+# @geoglows/geoglows-auth
 
-Authentication library for GEOGLOWS portal applications. Provides session bootstrap, profile management, sign-in UI, and auth-action components for both vanilla JS and React consumers.
-
-**npm:** [@aquaveo/geoglows-auth](https://www.npmjs.com/package/@aquaveo/geoglows-auth) (v1.6.0)
+Authentication for GEOGloWS portal apps — session bootstrap, profile management, the sign-in modal, and the navbar auth-action, for vanilla JS and React. Published to **GitHub Packages** under the `geoglows` org.
 
 ## Entry points
 
-| Entry | Import | Use case |
-|-------|--------|----------|
-| `core` | `@aquaveo/geoglows-auth/core` | Vanilla JS / TS apps (portal, sub-apps) |
-| `react` | `@aquaveo/geoglows-auth/react` | React 19 apps (aquiferx) |
-| `core/sign-in.css` | `@aquaveo/geoglows-auth/core/sign-in.css` | Sign-in modal and auth-action styles (import at app entry) |
+| Import | Use case |
+|--------|----------|
+| `@geoglows/geoglows-auth/bootstrap` | **Vanilla sub-apps** — one-call `bootstrapAuth()` (recommended) |
+| `@geoglows/geoglows-auth/core` | Vanilla primitives (composed directly by the portal) |
+| `@geoglows/geoglows-auth/react` | React 19 apps |
+| `@geoglows/geoglows-auth/core/sign-in.css` | Modal + auth-action styles (import once at app entry) |
 
 ## Install
 
-```bash
-npm install @aquaveo/geoglows-auth @supabase/supabase-js
-```
+It lives in GitHub Packages, so scope the registry and authenticate with a `read:packages` token.
 
-## Quick start (vanilla JS)
+`.npmrc`:
+```
+@geoglows:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+```
+Set `NODE_AUTH_TOKEN` (a GitHub token with `read:packages`) in your shell/CI, then `npm install @geoglows/geoglows-auth`.
+
+## Quick start — vanilla (recommended)
+
+One call wires the Supabase client, sign-in modal, navbar slot, recovery handling, and the full `onAuthStateChange` lifecycle. Import it **first** in your entry, and add a `<div id="auth-action">` to your navbar.
 
 ```js
-import { createClient } from "@supabase/supabase-js";
-import {
-  createSupabaseAuthAdapter,
-  bootstrapSession,
-  mountSignInModal,
-  renderAuthAction,
-  escapeHtml,
-} from "@aquaveo/geoglows-auth/core";
-import "@aquaveo/geoglows-auth/core/sign-in.css";
+import { bootstrapAuth } from "@geoglows/geoglows-auth/bootstrap";
+import "@geoglows/geoglows-auth/core/sign-in.css";
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-const auth = createSupabaseAuthAdapter({
-  supabase,
-  defaultRedirectTo: window.location.origin,
-  logoutRedirectTo: window.location.origin,
+bootstrapAuth({
+  supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
+  supabasePublishableKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+  portalUrl: import.meta.env.VITE_PORTAL_URL, // "" for the portal itself
 });
-
-// Mount the sign-in modal once
-const signInModal = mountSignInModal({ authAdapter: auth });
-
-// Open it from anywhere via a window event
-window.addEventListener("geoglows:sign-in-requested", () => signInModal.open());
-
-// Bootstrap session on auth state change
-supabase.auth.onAuthStateChange((event) => {
-  if (event === "INITIAL_SESSION") {
-    bootstrapSession({ auth, supabase, onStateChange: updateUI });
-  }
-});
-
-// Render the navbar auth slot (sign-in button or avatar dropdown)
-function updateUI(state) {
-  document.getElementById("auth-action").innerHTML = renderAuthAction(state);
-}
 ```
 
-## Quick start (React)
+Options: `slot`, `portalUrl`/`profilePath`, `defaultRedirectTo`/`logoutRedirectTo`, `oauthRedirectTo`, `onAuthChange`, `mountModal`. Returns `{ supabase, authAdapter, getState, openSignIn, signOut, destroy }`.
+
+Apps that own their own orchestration (e.g. the portal) compose the `/core` primitives directly: `createGeoglowsSupabaseClient`, `createSupabaseAuthAdapter`, `bootstrapSession`, `mountSignInModal`, `renderAuthAction`, `detectRecoveryUrlState`, plus `escapeHtml` / `sanitizeHref`.
+
+## Quick start — React
 
 ```tsx
-import { createClient } from "@supabase/supabase-js";
-import {
-  createSupabaseAuthAdapter,
-  SupabaseProvider,
-  AuthProvider,
-  SupabaseAuthUI,
-  useAuth,
-} from "@aquaveo/geoglows-auth/react";
-import "@aquaveo/geoglows-auth/core/sign-in.css";
+import { SupabaseProvider, AuthProvider, useAuth } from "@geoglows/geoglows-auth/react";
+import "@geoglows/geoglows-auth/core/sign-in.css";
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-const auth = createSupabaseAuthAdapter({ supabase, defaultRedirectTo: "/" });
-
-function App() {
-  return (
-    <SupabaseProvider client={supabase}>
-      <AuthProvider auth={auth}>
-        <Routes />
-      </AuthProvider>
-    </SupabaseProvider>
-  );
-}
+<SupabaseProvider client={supabase}>
+  <AuthProvider auth={auth}><Routes /></AuthProvider>
+</SupabaseProvider>
 ```
 
-`useAuth()` returns `{ user, profile, loading, refresh, signIn, signOut }`.
-
-## Core surface API
-
-### Session and auth
-
-| Export | Description |
-|--------|-------------|
-| `createSupabaseAuthAdapter(opts)` | Create a Supabase Auth adapter |
-| `bootstrapSession(opts)` | Full session lifecycle: sign-in completion, user fetch, profile ensure, account load |
-| `mountSignInModal({ authAdapter })` | Mount the vanilla sign-in modal (password, OAuth, sign-up, forgot password) |
-| `renderAuthAction(state, opts?)` | Render the navbar auth slot (sign-in button or avatar dropdown with profile link) |
-| `detectRecoveryUrlState({ hash, search })` | Synchronous URL parser for password recovery detection at module load |
-
-### Profile
-
-| Export | Description |
-|--------|-------------|
-| `ensureProfile(supabase, user)` | Select-then-insert: creates a `core.profiles` row on first sign-in, returns existing row otherwise |
-| `updateProfile(supabase, data)` | Update profile fields; recomputes `display_name` from name parts |
-| `loadAccountSummary(supabase, userId)` | Load `{ profile }` for the current user |
-| `isProfileComplete(profile)` | Returns true if first_name and last_name are non-empty |
-
-### Security helpers
-
-| Export | Description |
-|--------|-------------|
-| `escapeHtml(value)` | HTML entity escaping for template-string innerHTML rendering |
-| `sanitizeHref(url)` | Returns null for dangerous URL schemes (`javascript:`, `data:`, `vbscript:`) |
-
-## React surface API
-
-| Export | Description |
-|--------|-------------|
-| `<SupabaseProvider>` | Supabase client context |
-| `<AuthProvider>` | Auto-bootstraps session, provides `useAuth()` |
-| `useAuth()` | `{ user, profile, loading, refresh, signIn, signOut }` |
-| `<SupabaseAuthUI>` | Sign-in form (password + OAuth + sign-up + forgot password) |
-| `<UserMenu profileHref?>` | Avatar dropdown with optional profile link |
-| `<ProfileSetupForm>` | First-time profile completion form |
-| `<ProfileEditForm>` | Profile editing form |
-| `<ProfileCompletionBanner>` | Banner prompting incomplete profile completion |
-
-## Auth adapters
-
-Two adapters ship in the package:
-
-| Adapter | Provider | Status |
-|---------|----------|--------|
-| `createSupabaseAuthAdapter` | Supabase Auth | Active (all production consumers) |
-| `createOidcAuthAdapter` | AWS Cognito / OIDC | Shipped but unused in production |
-
-The library is dual-mode by design. See [`docs/adapters.md`](./docs/adapters.md) for the full contract and decision guide.
+`useAuth()` → `{ user, profile, loading, refresh, signIn, signOut }`. Also ships `<SupabaseAuthUI>`, `<UserMenu>`, and profile forms/banner.
 
 ## Database schema
 
-The library expects a `profiles` table in the `core` schema:
-
-```sql
-core.profiles (
-  id uuid primary key,       -- matches auth.users.id
-  email text,
-  display_name text,          -- computed from name parts by updateProfile
-  first_name text,
-  middle_name text,
-  last_name text,
-  avatar_url text,
-  user_type text,
-  user_link text,
-  created_at timestamptz,
-  updated_at timestamptz
-)
-```
-
-RLS policies gate access by `auth.uid()`. Migrations live in the portal repo at `apps.geoglows/supabase/migrations/`.
-
-`user_metadata` from Supabase Auth seeds the profile row on first sign-in only. It is never re-flowed into `profiles` on subsequent sign-ins.
+Expects a `core.profiles` table (`id`, `email`, `display_name`, name parts, `avatar_url`, `user_type`, `user_link`, timestamps), RLS-gated by `auth.uid()`. Migrations live in `geoglows/geoglows-water-intelligence-portal-db`. `user_metadata` seeds the row on first sign-in only.
 
 ## Development
 
 ```bash
-npm run build         # clean dist/, emit TS declarations, build ESM + CJS
-npm test              # vitest under jsdom
-npm run test:watch    # watch mode
-npm run lint          # eslint
+npm run build   # clean dist/, emit types, build ESM + CJS
+npm test        # vitest (jsdom)
+npm run lint
 ```
 
 ## Publishing
 
-```bash
-# 1. Bump version in package.json
-# 2. Build and verify
-npm run build
-npm test
-
-# 3. Publish (requires Aquaveo npm org membership + 2FA OTP)
-npm publish
-
-# 4. Tag and push
-git tag v<version>
-git push && git push --tags
-```
-
-The `prepublishOnly` script runs `npm run build` automatically before publish.
+Automated: bump `version` in `package.json`, merge, then publish a GitHub **Release** (or run the *Publish to GitHub Packages* workflow). It builds and publishes to GitHub Packages using the workflow's built-in `GITHUB_TOKEN` — no personal token or npm login needed. `prepublishOnly` runs build + tests.
 
 ## Consumers
 
 | App | Surface | Repo |
 |-----|---------|------|
-| apps.geoglows (portal) | `core` | Aquaveo/apps.geoglows |
+| apps.geoglows (portal) | `core` | geoglows/apps.geoglows |
+| rfs-v2-hydroviewer | `bootstrap` | geoglows/rfs-v2-hydroviewer |
+| grace | `bootstrap` | geoglows/grace-gldas-groundwater-dashboard |
 | aquiferx | `react` | Aquaveo/aquiferx |
-| grace-groundwater-dashboard | `core` | Aquaveo/grace-groundwater-dashboard |
-| rfs-v2-hydroviewer | `core` | Aquaveo/rfs-v2-hydroviewer |
