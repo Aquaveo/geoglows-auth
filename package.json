@@ -1,8 +1,8 @@
 {
   "name": "@geoglows/geoglows-auth",
-  "version": "1.7.1",
-  "author": "Aquaveo",
-  "description": "Authentication library for GEOGloWS portals",
+  "version": "1.7.2",
+  "author": "GEOGLOWS",
+  "description": "Authentication library for apps and app portals",
   "license": "MIT",
   "private": false,
   "publishConfig": {
@@ -42,6 +42,7 @@
     "build": "rm -rf dist && tsc -p tsconfig.build.json && vite build",
     "dev": "vite",
     "lint": "eslint .",
+    "prepare": "npm run build",
     "prepublishOnly": "npm run build && npm test",
     "preview": "vite preview",
     "test": "vitest run",
