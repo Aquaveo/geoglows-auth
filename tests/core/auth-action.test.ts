@@ -213,10 +213,10 @@ describe("renderAuthAction", () => {
       status: "ready" as const,
     });
 
-    it("defaults to '#profile' when no options arg is passed (apps.geoglows backward compat)", () => {
+    it("defaults to '/profile' when no options arg is passed", () => {
       const html = renderAuthAction(signedInState());
       expect(html).toMatch(
-        /<a[^>]*href="#profile"[^>]*class="geoglows-auth-action-menu-link"[^>]*>Profile<\/a>/,
+        /<a[^>]*href="\/profile"[^>]*class="geoglows-auth-action-menu-link"[^>]*>Profile<\/a>/,
       );
     });
 

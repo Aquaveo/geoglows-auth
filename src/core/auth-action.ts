@@ -35,11 +35,10 @@ export interface AuthActionState {
  * Optional rendering options for `renderAuthAction`.
  *
  * `profileHref` controls the destination of the Profile link in the avatar
- * dropdown. The default `"#profile"` preserves backward compat for consumers
- * that handle the hash route in their own router (e.g. apps.geoglows). Sub-apps
+ * dropdown. The default `"/profile"` targets the portal's profile page. Sub-apps
  * that want the link to navigate elsewhere (typically the portal's profile
- * page) should pass an absolute or root-relative URL like `"/#profile"` or
- * `"https://portal-dev.geoglows.org/#profile"`.
+ * page on another host) should pass an absolute URL like
+ * `"https://apps.geoglows.org/profile"`.
  *
  * Pass `null` to omit the Profile link entirely from the dropdown — useful when
  * a sub-app does not have its own profile page AND the portal is unreachable
@@ -75,11 +74,11 @@ export function renderAuthAction(
   options: AuthActionOptions = {},
 ): string {
   const { user, account, status, action } = state;
-  // `profileHref === undefined` means "use the default" (#profile); explicit
+  // `profileHref === undefined` means "use the default" (/profile); explicit
   // `null` means "omit the Profile link"; any other string flows through
   // sanitizeHref which also returns null for dangerous schemes.
   const rawProfileHref =
-    options.profileHref === undefined ? "#profile" : options.profileHref;
+    options.profileHref === undefined ? "/profile" : options.profileHref;
   const profileHref = sanitizeHref(rawProfileHref);
 
   // If we have a user, prefer the avatar even during transient loading
