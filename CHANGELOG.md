@@ -5,6 +5,15 @@ All notable changes to `@aquaveo/geoglows-auth` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.7.4] — 2026-08-28
+
+### Changed
+
+- **Profile link defaults to `/profile`.** `renderAuthAction` (`profileHref`)
+  and `bootstrapAuth` (`profilePath`) now default to the portal's `/profile`
+  route instead of the `#profile` hash. Consumers still handling the hash route
+  can pass `profileHref: "#profile"` / `profilePath: "/#profile"` explicitly.
+
 ## [1.7.3] — 2026-08-28
 
 ### Added

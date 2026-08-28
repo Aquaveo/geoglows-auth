@@ -42,7 +42,7 @@ export interface BootstrapAuthConfig {
    * relative link — correct for the portal app itself.
    */
   portalUrl?: string;
-  /** Portal profile route appended to {@link BootstrapAuthConfig.portalUrl}. Default `"/#profile"`. */
+  /** Portal profile route appended to {@link BootstrapAuthConfig.portalUrl}. Default `"/profile"`. */
   profilePath?: string;
   /** Post-auth redirect. Default: `() => location.origin + location.pathname`. */
   defaultRedirectTo?: () => string;
@@ -102,7 +102,7 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
     supabasePublishableKey,
     slot = "#auth-action",
     portalUrl = "",
-    profilePath = "/#profile",
+    profilePath = "/profile",
     defaultRedirectTo = () => window.location.origin + window.location.pathname,
     logoutRedirectTo = () => window.location.origin,
     onAuthChange,
