@@ -5,6 +5,17 @@ All notable changes to `@aquaveo/geoglows-auth` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.7.3] — 2026-08-28
+
+### Added
+
+- **Avatar menu dismissal.** The vanilla auth-action avatar menu (a native
+  `<details>`) now closes on a click anywhere outside it and on Escape.
+  `bootstrapAuth` wires this automatically and removes the listeners in
+  `destroy()`. Portal / `core` consumers that render the slot themselves can
+  call the new `wireAvatarMenuDismiss(slotElement)` (returns an unwire
+  function).
+
 ## [1.5.0] — 2026-04-30
 
 ### Added — `<SupabaseAuthUI>` parity with vanilla `mountSignInModal`

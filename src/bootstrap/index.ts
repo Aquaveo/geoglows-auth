@@ -19,6 +19,7 @@ import {
   createSupabaseAuthAdapter,
   mountSignInModal,
   renderAuthAction,
+  wireAvatarMenuDismiss,
 } from "../core";
 import type { AuthActionState } from "../core";
 
@@ -173,6 +174,10 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
   const onSignInRequested = () => signInModal?.open();
   window.addEventListener(signInRequestedEvent, onSignInRequested);
 
+  // The avatar menu closes on an outside click or Escape, like any dropdown.
+  const slotEl = resolveSlot();
+  const unwireAvatarMenu = slotEl ? wireAvatarMenuDismiss(slotEl) : () => {};
+
   // Recovery-URL snapshot — read synchronously before any getSession(). Gates
   // the PASSWORD_RECOVERY handler so only the tab that actually received the
   // recovery link opens the setNewPassword modal (Supabase fires
@@ -310,6 +315,7 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
     signOut,
     destroy: () => {
       window.removeEventListener(signInRequestedEvent, onSignInRequested);
+      unwireAvatarMenu();
       authSub?.subscription?.unsubscribe();
       clearTimeout(fallbackTimer);
     },

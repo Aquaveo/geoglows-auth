@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { renderAuthAction } from "../../src/core/auth-action";
+import {
+  renderAuthAction,
+  wireAvatarMenuDismiss,
+} from "../../src/core/auth-action";
 import type { AuthUser, Profile } from "../../src/types";
 
 const buildUser = (overrides: Partial<AuthUser> = {}): AuthUser => ({
@@ -306,5 +309,54 @@ describe("renderAuthAction", () => {
       );
       expect(loadingHtml).not.toContain("geoglows-auth-action-menu-link");
     });
+  });
+});
+
+describe("wireAvatarMenuDismiss", () => {
+  const mount = () => {
+    const slot = document.createElement("div");
+    slot.innerHTML = renderAuthAction(
+      { user: buildUser(), status: "authenticated", action: null },
+      { profileHref: "/#profile" },
+    );
+    document.body.appendChild(slot);
+    const menu = slot.querySelector("details") as HTMLDetailsElement;
+    menu.open = true;
+    return { slot, menu };
+  };
+
+  it("closes the open menu on a click outside it", () => {
+    const { slot, menu } = mount();
+    const unwire = wireAvatarMenuDismiss(slot);
+    document.body.click();
+    expect(menu.open).toBe(false);
+    unwire();
+    slot.remove();
+  });
+
+  it("leaves the menu open on a click inside it", () => {
+    const { slot, menu } = mount();
+    const unwire = wireAvatarMenuDismiss(slot);
+    (menu.querySelector("a") as HTMLElement).click();
+    expect(menu.open).toBe(true);
+    unwire();
+    slot.remove();
+  });
+
+  it("closes the open menu on Escape", () => {
+    const { slot, menu } = mount();
+    const unwire = wireAvatarMenuDismiss(slot);
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(menu.open).toBe(false);
+    unwire();
+    slot.remove();
+  });
+
+  it("stops listening once unwired", () => {
+    const { slot, menu } = mount();
+    wireAvatarMenuDismiss(slot)();
+    document.body.click();
+    expect(menu.open).toBe(true);
+    slot.remove();
   });
 });

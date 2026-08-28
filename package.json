@@ -1,6 +1,6 @@
 {
   "name": "@geoglows/geoglows-auth",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "author": "GEOGLOWS",
   "description": "Authentication library for apps and app portals",
   "license": "MIT",

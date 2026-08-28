@@ -137,3 +137,36 @@ export function renderAuthAction(
     </details>
   `;
 }
+
+/**
+ * Close the avatar `<details>` menu when the user clicks anywhere outside it
+ * or presses Escape. A native `<details>` only toggles from its own summary,
+ * so without this the menu stays open until the avatar is clicked again.
+ *
+ * The slot is re-rendered on every auth change, so the open menu is looked up
+ * per event rather than captured. Returns a function that removes the
+ * listeners.
+ */
+export function wireAvatarMenuDismiss(
+  slot: Element,
+  doc: Document = document,
+): () => void {
+  const openMenu = () =>
+    slot.querySelector<HTMLDetailsElement>("details[open]");
+  const onClick = (e: Event) => {
+    const menu = openMenu();
+    if (menu && !menu.contains(e.target as Node)) menu.open = false;
+  };
+  const onKeydown = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      const menu = openMenu();
+      if (menu) menu.open = false;
+    }
+  };
+  doc.addEventListener("click", onClick);
+  doc.addEventListener("keydown", onKeydown);
+  return () => {
+    doc.removeEventListener("click", onClick);
+    doc.removeEventListener("keydown", onKeydown);
+  };
+}
