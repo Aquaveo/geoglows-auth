@@ -39,6 +39,16 @@ export interface AuthAdapter {
   clearStaleAuthState(): Promise<void>;
   completeSignInIfNeeded(): Promise<AuthUser | null>;
   getCurrentUser(): Promise<AuthUser | null>;
+  /**
+   * Like {@link getCurrentUser}, but the answer comes from the account service
+   * rather than from local storage: a stored session is confirmed with the
+   * server, and a signed-out visitor still costs one round trip to prove the
+   * service is reachable. Resolves `null` for "no session" and rejects when
+   * the service could not be reached — the two are different answers, and
+   * `bootstrapSession` treats them differently. Optional; adapters without it
+   * fall back to {@link getCurrentUser}.
+   */
+  verifySession?(): Promise<AuthUser | null>;
   signInRedirect(): Promise<void>;
   signOutRedirect(): Promise<void>;
   setupTokenRenewal(): void;
@@ -65,6 +75,13 @@ export type SupabaseAuthMode = Exclude<SupabaseAuthFlow, "oauth">;
 
 export interface SupabaseAuthConfig {
   supabase: SupabaseClient;
+  /**
+   * Project URL and publishable key, used by `verifySession` to probe the
+   * account service when there is no stored session. Omitted, a signed-out
+   * visitor is reported as anonymous without a round trip.
+   */
+  supabaseUrl?: string;
+  supabasePublishableKey?: string;
   defaultRedirectTo?: string;
   logoutRedirectTo?: string;
   flow?: SupabaseAuthFlow;
@@ -150,6 +167,33 @@ export interface SupabaseFactoryOptions {
    */
   auth?: AuthAdapter | null;
   useIdToken?: boolean;
+  /**
+   * Whether Supabase runs its own background token refresh. Default `true`,
+   * which is Supabase's own default: a 30s `setInterval` plus a
+   * visibilitychange handler, started at client construction and never stopped.
+   *
+   * Pass `false` to own that decision — `supabase.auth.startAutoRefresh()` /
+   * `stopAutoRefresh()` then bound it to the times a session actually exists.
+   * That matters when the auth service may be unreachable: a stored session
+   * whose refresh token cannot be redeemed makes every tick retry, with
+   * internal backoff, for as long as the tab is open.
+   */
+  autoRefreshToken?: boolean;
+  /**
+   * Abort any Supabase request that has not answered within this many
+   * milliseconds. Omitted (the default) means no timeout, matching
+   * `@supabase/supabase-js` behaviour — a request against an unreachable host
+   * stays pending for as long as the browser allows.
+   *
+   * Set it and every call the client makes is bounded: session reads, profile
+   * reads and writes, sign-in, password reset. Aborting at the transport layer
+   * is what distinguishes this from racing a promise at one call site — the
+   * latter stops the waiting, this stops the work.
+   *
+   * The rejection is a `RequestTimeoutError` (see `./core/retry`), which
+   * `isTransientError` classifies as worth retrying.
+   */
+  fetchTimeoutMs?: number;
 }
 
 export interface AuthContextValue {

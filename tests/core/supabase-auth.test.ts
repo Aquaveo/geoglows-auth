@@ -4,6 +4,9 @@ import type { SupabaseAuthAdapter } from "../../src/types";
 
 interface MockAuth {
   getSession: ReturnType<typeof vi.fn>;
+  getUser: ReturnType<typeof vi.fn>;
+  storageKey?: string;
+  storage?: { removeItem: ReturnType<typeof vi.fn> };
   signInWithPassword: ReturnType<typeof vi.fn>;
   signInWithOtp: ReturnType<typeof vi.fn>;
   signInWithOAuth: ReturnType<typeof vi.fn>;
@@ -42,6 +45,7 @@ function buildMockClient(): MockClient {
   return {
     auth: {
       getSession: vi.fn(),
+      getUser: vi.fn(),
       signInWithPassword: vi.fn(),
       signInWithOtp: vi.fn(),
       signInWithOAuth: vi.fn(),
@@ -72,6 +76,7 @@ describe("createSupabaseAuthAdapter", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("throws when no supabase client is provided", () => {
@@ -296,6 +301,118 @@ describe("createSupabaseAuthAdapter", () => {
     });
   });
 
+  describe("verifySession", () => {
+    const networkError = () => new TypeError("Failed to fetch");
+    const rejected = (status: number) =>
+      Object.assign(new Error("invalid JWT"), {
+        name: "AuthApiError",
+        __isAuthError: true,
+        status,
+        code: "bad_jwt",
+      });
+
+    it("returns the user once the server has confirmed the stored session", async () => {
+      const session = buildSession();
+      client.auth.getSession.mockResolvedValue({ data: { session }, error: null });
+      client.auth.getUser.mockResolvedValue({ data: { user: session.user }, error: null });
+
+      const user = await adapter.verifySession!();
+
+      expect(client.auth.getUser).toHaveBeenCalledWith("access-123");
+      expect(user?.sub).toBe("user-uuid-1");
+    });
+
+    it("rejects, rather than reporting signed out, when the server cannot be reached", async () => {
+      client.auth.getSession.mockResolvedValue({
+        data: { session: buildSession() },
+        error: null,
+      });
+      client.auth.getUser.mockResolvedValue({ data: { user: null }, error: networkError() });
+
+      await expect(adapter.verifySession!()).rejects.toThrow(/failed to fetch/i);
+    });
+
+    it("rejects when the stored token could not be refreshed", async () => {
+      client.auth.getSession.mockResolvedValue({
+        data: { session: null },
+        error: networkError(),
+      });
+
+      await expect(adapter.verifySession!()).rejects.toThrow(/failed to fetch/i);
+      expect(client.auth.getUser).not.toHaveBeenCalled();
+    });
+
+    it("forgets a token the server rejected and reports signed out", async () => {
+      client.auth.storageKey = "sb-test-auth-token";
+      client.auth.storage = { removeItem: vi.fn() };
+      client.auth.getSession.mockResolvedValue({
+        data: { session: buildSession() },
+        error: null,
+      });
+      client.auth.getUser.mockResolvedValue({ data: { user: null }, error: rejected(401) });
+
+      expect(await adapter.verifySession!()).toBeNull();
+      expect(client.auth.storage.removeItem).toHaveBeenCalledWith("sb-test-auth-token");
+    });
+
+    it("probes the service for a signed-out visitor when the project URL is known", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ status: 200 });
+      vi.stubGlobal("fetch", fetchMock);
+      const probing = createSupabaseAuthAdapter({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        supabase: client as any,
+        supabaseUrl: "https://x.supabase.co/",
+        supabasePublishableKey: "key",
+      });
+      client.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
+
+      expect(await probing.verifySession!()).toBeNull();
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://x.supabase.co/auth/v1/health",
+        expect.objectContaining({ headers: { apikey: "key" } }),
+      );
+    });
+
+    it("rejects for a signed-out visitor when the probe cannot reach the service", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(networkError()));
+      const probing = createSupabaseAuthAdapter({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        supabase: client as any,
+        supabaseUrl: "https://x.supabase.co",
+        supabasePublishableKey: "key",
+      });
+      client.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
+
+      await expect(probing.verifySession!()).rejects.toThrow(/failed to fetch/i);
+    });
+
+    it("treats a 5xx from the probe as unreachable and any other answer as reachable", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ status: 503 });
+      vi.stubGlobal("fetch", fetchMock);
+      const probing = createSupabaseAuthAdapter({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        supabase: client as any,
+        supabaseUrl: "https://x.supabase.co",
+        supabasePublishableKey: "key",
+      });
+      client.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
+
+      await expect(probing.verifySession!()).rejects.toMatchObject({ status: 503 });
+
+      fetchMock.mockResolvedValue({ status: 401 });
+      expect(await probing.verifySession!()).toBeNull();
+    });
+
+    it("skips the probe when no project URL was given", async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      client.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
+
+      expect(await adapter.verifySession!()).toBeNull();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
   describe("signOutRedirect", () => {
     it("calls supabase.auth.signOut", async () => {
       client.auth.signOut.mockResolvedValue({ error: null });
@@ -313,6 +430,30 @@ describe("createSupabaseAuthAdapter", () => {
 
       await expect(adapter.signOutRedirect()).resolves.toBeUndefined();
       expect(warnSpy).toHaveBeenCalled();
+    });
+
+    it("clears the stored session itself when the server did not acknowledge", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      client.auth.storageKey = "sb-test-auth-token";
+      client.auth.storage = { removeItem: vi.fn() };
+      client.auth.signOut.mockResolvedValue({ error: new TypeError("Failed to fetch") });
+
+      await adapter.signOutRedirect();
+
+      expect(client.auth.storage.removeItem).toHaveBeenCalledWith("sb-test-auth-token");
+      expect(client.auth.storage.removeItem).toHaveBeenCalledWith(
+        "sb-test-auth-token-code-verifier",
+      );
+    });
+
+    it("leaves storage alone when the server acknowledged the sign-out", async () => {
+      client.auth.storageKey = "sb-test-auth-token";
+      client.auth.storage = { removeItem: vi.fn() };
+      client.auth.signOut.mockResolvedValue({ error: null });
+
+      await adapter.signOutRedirect();
+
+      expect(client.auth.storage.removeItem).not.toHaveBeenCalled();
     });
   });
 

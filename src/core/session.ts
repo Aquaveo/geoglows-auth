@@ -24,6 +24,16 @@ export interface BootstrapSessionOptions {
   supabase: GeoglowsSupabaseClient;
   syncProfile?: boolean;
   loadAccount?: boolean;
+  /**
+   * Run `auth.completeSignInIfNeeded()` — the OAuth callback exchange. Default
+   * `true`.
+   *
+   * Pass `false` when re-running bootstrap after a failure that happened
+   * *after* the callback was already consumed. An authorization code is
+   * single-use: a retry that replays the exchange fails with a different and
+   * more confusing error than the one being retried.
+   */
+  completeCallback?: boolean;
   onStateChange?: (state: SessionState) => void;
   /**
    * Optional baseline state — pass the consumer's currently-known
@@ -102,6 +112,7 @@ export async function bootstrapSession({
   supabase,
   syncProfile = true,
   loadAccount = true,
+  completeCallback = true,
   onStateChange,
   initialState,
 }: BootstrapSessionOptions): Promise<SessionState> {
@@ -132,8 +143,19 @@ export async function bootstrapSession({
     await auth.clearStaleAuthState();
 
     emit({ status: "processing_callback" });
-    const callbackUser = await auth.completeSignInIfNeeded();
-    currentUser = callbackUser ?? (await auth.getCurrentUser());
+    const callbackUser = completeCallback
+      ? await auth.completeSignInIfNeeded()
+      : null;
+    // `getCurrentUser` on the Supabase adapter reads local storage and never
+    // touches the network, so it cannot tell "signed in" from "the service is
+    // down and there is a stale token in storage". `verifySession` asks the
+    // server, and rejects when it cannot — which lands in the `error` state
+    // below with no user, where the connect budget belongs.
+    currentUser =
+      callbackUser ??
+      (await (auth.verifySession
+        ? auth.verifySession()
+        : auth.getCurrentUser()));
 
     if (!currentUser) {
       return emit({

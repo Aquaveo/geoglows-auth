@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   renderAuthAction,
   wireAvatarMenuDismiss,
@@ -25,14 +25,16 @@ const buildProfile = (overrides: Partial<Profile> = {}): Profile => ({
 
 describe("renderAuthAction", () => {
   describe("loading state", () => {
-    it("renders the loading pill during bootstrapping", () => {
+    it("renders the spinner, not the sign-in button, during bootstrapping", () => {
       const html = renderAuthAction({
         user: null,
         account: null,
         status: "bootstrapping",
       });
       expect(html).toContain("geoglows-auth-action-loading");
-      expect(html).toContain("Signing in");
+      expect(html).toContain("geoglows-auth-action-loading-spinner");
+      expect(html).not.toContain("Signing in");
+      expect(html).not.toContain('id="geoglowsSignIn"');
     });
 
     it("renders the loading pill during loading_profile", () => {
@@ -75,13 +77,17 @@ describe("renderAuthAction", () => {
       expect(html).toContain("Sign in");
     });
 
-    it("renders the sign-in button when status is error and user is null", () => {
+    it("renders the retry-able error icon when status is error and user is null", () => {
       const html = renderAuthAction({
         user: null,
         account: null,
         status: "error",
       });
-      expect(html).toContain('id="geoglowsSignIn"');
+      // Not the sign-in button: the modal behind it cannot work when the
+      // account service is what failed, so the slot says so and offers a retry.
+      expect(html).toContain('id="geoglowsAuthRetry"');
+      expect(html).toContain("geoglows-auth-action-error");
+      expect(html).not.toContain('id="geoglowsSignIn"');
     });
 
     it("renders the sign-in button when status is ready and user is null", () => {
@@ -203,6 +209,40 @@ describe("renderAuthAction", () => {
       });
       expect(html).not.toMatch(/<button[^>]*id="geoglowsSignOut"[^>]*disabled/);
       expect(html).toContain("Sign out");
+    });
+  });
+
+  describe("error-state language", () => {
+    const errorState = () => ({
+      user: null,
+      account: null,
+      status: "error" as const,
+    });
+
+    it("renders the tooltip in the requested language", () => {
+      const html = renderAuthAction(errorState(), { language: "es-MX" });
+      expect(html).toContain(
+        'title="No es posible iniciar sesión en las cuentas de GEOGLOWS en este momento"',
+      );
+    });
+
+    it("falls back to English for a language without a translation", () => {
+      const html = renderAuthAction(errorState(), { language: "de" });
+      expect(html).toContain(
+        'title="Unable to log in to GEOGLOWS accounts at this time"',
+      );
+    });
+
+    it("uses the browser's preferred language by default", () => {
+      vi.stubGlobal("navigator", { languages: ["fr-FR"], language: "fr-FR" });
+      try {
+        const html = renderAuthAction(errorState());
+        expect(html).toContain(
+          'title="Impossible de se connecter aux comptes GEOGLOWS pour le moment"',
+        );
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
   });
 

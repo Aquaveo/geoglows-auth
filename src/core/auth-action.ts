@@ -2,6 +2,7 @@ import type { AuthUser } from "../types";
 import type { AccountSummary } from "./account";
 import { getUserDisplayInfo, type SessionStatus } from "./session";
 import { escapeHtml, sanitizeHref } from "./escape";
+import { getAuthMessages } from "./i18n";
 
 /**
  * Statuses that render the loading pill. Centralized so future additions to
@@ -49,13 +50,20 @@ export interface AuthActionState {
  */
 export interface AuthActionOptions {
   profileHref?: string | null;
+  /**
+   * BCP 47 tag (or preference list) for the slot's visitor-facing text.
+   * Default: the browser's `navigator.languages`, falling back to English.
+   * Pass the app's own selected language when it has a switcher.
+   */
+  language?: readonly string[] | string | null;
 }
 
 /**
  * Returns the HTML string for the auth-action slot in a navbar.
  *
- * Three states it can render:
+ * Four states it can render:
  *   - Loading pill (during session bootstrap)
+ *   - Error icon (the account service could not be reached; click retries)
  *   - "Sign in" button (signed out; click should open the sign-in modal)
  *   - Avatar with dropdown menu (signed in; menu has Profile link + Sign out)
  *
@@ -64,7 +72,7 @@ export interface AuthActionOptions {
  * to avoid tearing down sibling DOM (e.g., a map). The element IDs in the
  * markup are stable contract: `#geoglowsSignIn` (the sign-in button),
  * `#geoglowsSignOut` (the sign-out button), `#geoglowsAuthActionAvatar` (the
- * `<details>`-based dropdown).
+ * `<details>`-based dropdown), `#geoglowsAuthRetry` (the error-state retry).
  *
  * Pair with `mountSignInModal` and `import "@aquaveo/geoglows-auth/core/sign-in.css"`
  * for the matching styles.
@@ -80,6 +88,7 @@ export function renderAuthAction(
   const rawProfileHref =
     options.profileHref === undefined ? "/profile" : options.profileHref;
   const profileHref = sanitizeHref(rawProfileHref);
+  const messages = getAuthMessages(options.language);
 
   // If we have a user, prefer the avatar even during transient loading
   // statuses. This protects against the visible flicker that would otherwise
@@ -89,11 +98,41 @@ export function renderAuthAction(
   // user is still authenticated. Pair with `bootstrapSession({ initialState })`
   // (session.ts) which avoids nulling out user/account during those phases.
   if (!user) {
+    // The account service could not be reached and we have stopped trying — see
+    // `bootstrapAuth`'s connect budget. Deliberately not the "Sign in" button: a
+    // button that opens a modal which cannot possibly work is worse than saying
+    // so, and the retry is the one action that can change the answer.
+    if (status === "error") {
+      return `
+        <button
+          type="button"
+          id="geoglowsAuthRetry"
+          class="geoglows-auth-action-error"
+          aria-label="${escapeHtml(messages.serviceUnavailable)}"
+          title="${escapeHtml(messages.serviceUnavailable)}"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 9v4" />
+            <path d="M12 17h.01" />
+            <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+          </svg>
+        </button>
+      `;
+    }
+
+    // Still finding out whether there is a session. A spinner in the avatar's
+    // footprint, not a "Sign in" button: the button would be a lie half the
+    // time (the visitor may well be signed in), and it would jump to the avatar
+    // a moment later.
     if (LOADING_STATUSES.has(status)) {
       return `
-        <div class="geoglows-auth-action-loading" role="status" aria-live="polite">
-          <span class="geoglows-auth-action-loading-dot" aria-hidden="true"></span>
-          Signing in…
+        <div
+          class="geoglows-auth-action-loading"
+          role="status"
+          aria-live="polite"
+          aria-label="Connecting to the account service"
+        >
+          <span class="geoglows-auth-action-loading-spinner" aria-hidden="true"></span>
         </div>
       `;
     }

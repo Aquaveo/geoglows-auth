@@ -5,6 +5,7 @@ import { createSupabaseAuthAdapter } from "../../src/core/supabase-auth";
 interface MockSupabaseClient {
   auth: {
     getSession: ReturnType<typeof vi.fn>;
+    getUser: ReturnType<typeof vi.fn>;
     signOut: ReturnType<typeof vi.fn>;
     onAuthStateChange: ReturnType<typeof vi.fn>;
     exchangeCodeForSession: ReturnType<typeof vi.fn>;
@@ -90,6 +91,11 @@ function buildClient(opts: { existingProfile?: boolean } = {}): ClientMocks {
   const client: MockSupabaseClient = {
     auth: {
       getSession: vi.fn(),
+      // The server confirms whatever getSession hands back unless a test says
+      // otherwise.
+      getUser: vi.fn(() =>
+        Promise.resolve({ data: { user: buildSession().user }, error: null }),
+      ),
       signOut: vi.fn().mockResolvedValue({ error: null }),
       onAuthStateChange: vi.fn(() => ({
         data: { subscription: { unsubscribe: vi.fn() } },
@@ -122,6 +128,27 @@ describe("bootstrapSession with the Supabase Auth adapter", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("lands in error with no user when the stored session cannot be verified", async () => {
+    client.auth.getSession.mockResolvedValue({
+      data: { session: buildSession() },
+      error: null,
+    });
+    client.auth.getUser.mockResolvedValue({
+      data: { user: null },
+      error: new TypeError("Failed to fetch"),
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const adapter = createSupabaseAuthAdapter({ supabase: client as any });
+    const state = await bootstrapSession({ auth: adapter, supabase: client as never });
+
+    // A stale token in storage is not a signed-in user: the service was never
+    // reached, so this is the connect budget's problem, not the avatar's.
+    expect(state.status).toBe("error");
+    expect(state.user).toBeNull();
+    expect(mocks.profilesMaybeSingle).not.toHaveBeenCalled();
   });
 
   it("walks through bootstrapping → ready when a session exists", async () => {
@@ -373,5 +400,36 @@ describe("bootstrapSession with the Supabase Auth adapter", () => {
     expect(final.status).toBe("error");
     expect((final.error as Error).message).toMatch(/rls denied/);
     expect(final.user?.sub).toBe("supabase-user-uuid");
+  });
+
+  it("skips the callback exchange when completeCallback is false", async () => {
+    client.auth.getSession.mockResolvedValue({
+      data: { session: buildSession() },
+      error: null,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const adapter = createSupabaseAuthAdapter({ supabase: client as any });
+
+    // A callback URL carrying a provider error: running the callback stage
+    // against it fails the bootstrap.
+    setUrl("http://localhost/?error=access_denied&error_description=denied");
+    const withCallback = await bootstrapSession({
+      auth: adapter,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase: client as any,
+    });
+    expect(withCallback.status).toBe("error");
+
+    // Skipping it — as a retry does, because the code is already spent —
+    // reaches the session through getSession instead.
+    setUrl("http://localhost/?error=access_denied&error_description=denied");
+    const skipped = await bootstrapSession({
+      auth: adapter,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase: client as any,
+      completeCallback: false,
+    });
+    expect(skipped.status).toBe("ready");
+    expect(skipped.user?.sub).toBe("supabase-user-uuid");
   });
 });
