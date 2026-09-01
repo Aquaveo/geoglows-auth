@@ -75,13 +75,17 @@ describe("renderAuthAction", () => {
       expect(html).toContain("Sign in");
     });
 
-    it("renders the sign-in button when status is error and user is null", () => {
+    it("renders the retry-able error icon when status is error and user is null", () => {
       const html = renderAuthAction({
         user: null,
         account: null,
         status: "error",
       });
-      expect(html).toContain('id="geoglowsSignIn"');
+      // Not the sign-in button: the modal behind it cannot work when the
+      // account service is what failed, so the slot says so and offers a retry.
+      expect(html).toContain('id="geoglowsAuthRetry"');
+      expect(html).toContain("geoglows-auth-action-error");
+      expect(html).not.toContain('id="geoglowsSignIn"');
     });
 
     it("renders the sign-in button when status is ready and user is null", () => {

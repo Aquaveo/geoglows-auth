@@ -15,13 +15,57 @@
 
 import {
   bootstrapSession,
+  computeBackoffMs,
   createGeoglowsSupabaseClient,
   createSupabaseAuthAdapter,
+  isTransientError,
   mountSignInModal,
   renderAuthAction,
+  RequestTimeoutError,
   wireAvatarMenuDismiss,
 } from "../core";
-import type { AuthActionState } from "../core";
+import type { AuthActionState, SessionState } from "../core";
+
+/** How a connect attempt or a retry loop ended. Reported via {@link BootstrapAuthConfig.onConnectState}. */
+export type ConnectPhase =
+  /** The account service answered; the slot is showing the real state. */
+  | "connected"
+  /** Signed in, but the profile row or account summary could not be loaded. */
+  | "degraded"
+  /** A transient failure; another attempt is scheduled. */
+  | "retrying"
+  /** The budget is spent (or the failure is permanent); the slot shows the error icon. */
+  | "gave_up"
+  /** A previously given-up connection came back. */
+  | "recovered";
+
+/** Payload passed to {@link BootstrapAuthConfig.onConnectState}. */
+export interface ConnectEvent {
+  phase: ConnectPhase;
+  /** What triggered the loop: `"INITIAL_SESSION"`, `"retry"`, `"online"`, … */
+  reason: string;
+  /** 1-based attempt this event describes. */
+  attempt: number;
+  error?: unknown;
+  /** Set on `"retrying"`: milliseconds until the next attempt. */
+  nextRetryInMs?: number;
+}
+
+/** Connect-budget tuning. See {@link BootstrapAuthConfig.connect}. */
+export interface ConnectConfig {
+  /** Total attempts, including the first. Default 3. Clamped to >= 1. */
+  attempts?: number;
+  /** Cap on a single attempt before it is treated as a failure. Default 10_000. */
+  timeoutMs?: number;
+  /** Wall-clock budget across all attempts. Default 60_000. */
+  giveUpMs?: number;
+  /**
+   * After giving up, the shortest gap before a tab-focus recheck may try
+   * again. Default 300_000 (5 minutes). The `online` event and the retry
+   * button ignore this — both are direct evidence that something changed.
+   */
+  recheckAfterMs?: number;
+}
 
 /** Config for {@link bootstrapAuth}. */
 export interface BootstrapAuthConfig {
@@ -50,6 +94,11 @@ export interface BootstrapAuthConfig {
   logoutRedirectTo?: () => string;
   /** Invoked after every render with the current auth state. */
   onAuthChange?: (state: AuthActionState) => void;
+  /**
+   * Invoked at each turn of the connect budget. Wire this to the app's
+   * telemetry; the library only writes to `console`, which nothing collects.
+   */
+  onConnectState?: (event: ConnectEvent) => void;
   /** Mount the sign-in modal. Default `true`. */
   mountModal?: boolean;
   /** Window event name that opens the sign-in modal. Default `"geoglows:sign-in-requested"`. */
@@ -62,6 +111,24 @@ export interface BootstrapAuthConfig {
    * Supabase Auth redirect allowlist.
    */
   oauthRedirectTo?: () => string;
+  /**
+   * How hard to try to reach the account service before giving up, in attempts
+   * and in wall-clock milliseconds.
+   *
+   * Auth is never on the critical path of these apps — the map, the data and
+   * every read-only feature work signed out — so an unreachable auth service is
+   * a degraded corner of the UI, not a reason to keep a page retrying for the
+   * length of a session. When the budget is spent the slot renders an error
+   * icon that retries on click, and the Supabase token ticker is stopped so
+   * nothing is left running in the background.
+   *
+   * Giving up is not permanent: coming back online, a tab focus after
+   * `recheckAfterMs`, an auth event that proves the service answered, or a
+   * click on the error icon all resume.
+   *
+   * Defaults: 3 attempts inside 60s, each attempt capped at 10s.
+   */
+  connect?: ConnectConfig;
 }
 
 /** Imperative handle returned by {@link bootstrapAuth}. */
@@ -72,6 +139,8 @@ export interface AuthHandle {
   getState(): AuthActionState;
   /** Programmatically open the sign-in modal. */
   openSignIn(): void;
+  /** Clear a given-up connection and spend a fresh budget. Safe to call anytime. */
+  reconnect(): void;
   /** Sign out and redirect. */
   signOut(): Promise<void>;
   /** Remove listeners/handlers (HMR, teardown). */
@@ -106,16 +175,34 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
     defaultRedirectTo = () => window.location.origin + window.location.pathname,
     logoutRedirectTo = () => window.location.origin,
     onAuthChange,
+    onConnectState,
     mountModal = true,
     signInRequestedEvent = "geoglows:sign-in-requested",
     oauthRedirectTo = () => window.location.origin + window.location.pathname,
+    connect = {},
   } = config;
+
+  // Clamped rather than trusted: `attempts: 0` would otherwise give up before
+  // trying at all, and a negative timeout would fail every attempt instantly.
+  const connectAttempts = Math.max(1, Math.floor(connect.attempts ?? 3));
+  const connectTimeoutMs = Math.max(1000, connect.timeoutMs ?? 10_000);
+  const connectGiveUpMs = Math.max(connectTimeoutMs, connect.giveUpMs ?? 60_000);
+  const connectRecheckAfterMs = Math.max(0, connect.recheckAfterMs ?? 300_000);
 
   const profileHref = `${portalUrl}${profilePath}`;
 
   const supabase = createGeoglowsSupabaseClient({
     url: supabaseUrl,
     publishableKey: supabasePublishableKey,
+    // The ticker is started below, and only once a session exists to refresh —
+    // see startTicker(). Left on Supabase's default it runs from construction to
+    // the end of the page, and against a stored session it cannot redeem it
+    // becomes a retry storm every 30s for as long as the tab is open.
+    autoRefreshToken: false,
+    // Bounds every request the client makes, not just the bootstrap: the
+    // sign-in form, password reset and profile writes are on the same
+    // unreachable host when auth is down, and none of them had a timeout.
+    fetchTimeoutMs: connectTimeoutMs,
   });
 
   const authAdapter = createSupabaseAuthAdapter({
@@ -167,11 +254,29 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
         void signOut();
       },
     );
+    el.querySelector<HTMLElement>("#geoglowsAuthRetry")?.addEventListener(
+      "click",
+      () => reconnect("retry-button"),
+    );
 
     onAuthChange?.(authState);
   }
 
-  const onSignInRequested = () => signInModal?.open();
+  function openSignIn(): void {
+    // The modal talks to the same host that just failed. Offering a form that
+    // cannot submit is worse than saying so — and the attempt is itself a good
+    // moment to find out whether the service came back.
+    if (connectGaveUp) {
+      console.warn(
+        "Sign-in is unavailable: the account service could not be reached. Retrying…",
+      );
+      reconnect("sign-in-requested");
+      return;
+    }
+    signInModal?.open();
+  }
+
+  const onSignInRequested = () => openSignIn();
   window.addEventListener(signInRequestedEvent, onSignInRequested);
 
   // The avatar menu closes on an outside click or Escape, like any dropdown.
@@ -216,11 +321,135 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
   }
 
   let initialBootstrapDone = false;
+  // Set once the connect budget is spent, so a later trigger cannot quietly
+  // restart the retrying that the budget just ended. Cleared only by evidence:
+  // the retry button, coming back online, a stale-enough tab focus, or an auth
+  // event that could only have come from a service that answered.
+  let connectGaveUp = false;
+  // Torn down. Checked at every await boundary so nothing renders into, or
+  // schedules against, a page that has gone away (HMR).
+  let destroyed = false;
+  // Rises with each retry loop. An older loop sees a newer generation at its
+  // next await and returns, so a SIGNED_OUT supersedes an in-flight
+  // INITIAL_SESSION loop instead of racing it with a second attempt counter.
+  let loopGen = 0;
+  // Rises with every attempt. A bootstrapSession that timed out keeps running
+  // to completion — nothing can cancel a promise already in flight — and would
+  // go on emitting state long after we moved on. Only the current attempt may
+  // write. See commitLate() for the one deliberate exception.
+  let attemptToken = 0;
+  let lastAttemptAt = 0;
+  // Whether an attempt has already consumed the OAuth callback code. Retrying
+  // the exchange after it succeeded fails with a different, more confusing
+  // error than the one being retried.
+  let callbackConsumed = false;
 
-  function bootstrapSafe(reason: string): void {
-    bootstrapSession({
+  // Every pending timer, so destroy() can actually stop the loop rather than
+  // clearing one handle and leaving the backoff sleep to wake up afterwards.
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+
+  function track(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
+    const timer = setTimeout(() => {
+      timers.delete(timer);
+      fn();
+    }, ms);
+    timers.add(timer);
+    return timer;
+  }
+
+  function untrack(timer: ReturnType<typeof setTimeout>): void {
+    clearTimeout(timer);
+    timers.delete(timer);
+  }
+
+  function sleep(ms: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      track(resolve, ms);
+    });
+  }
+
+  function emitConnect(event: ConnectEvent): void {
+    try {
+      onConnectState?.(event);
+    } catch (error) {
+      console.error("onConnectState handler threw:", error);
+    }
+  }
+
+  /**
+   * Supabase's background token refresh, run only while there is a session.
+   *
+   * The client is constructed with `autoRefreshToken: false`, so nothing ticks
+   * until a bootstrap actually finds a session; a signed-out visitor and a
+   * given-up connection both leave it stopped. `stopAutoRefresh()` also removes
+   * the visibilitychange handler, so a stop is not undone by the next tab focus.
+   */
+  const startTicker = () =>
+    void supabase.auth
+      .startAutoRefresh()
+      .catch((error: unknown) => console.debug("startAutoRefresh failed:", error));
+  const stopTicker = () =>
+    void supabase.auth
+      .stopAutoRefresh()
+      .catch((error: unknown) => console.debug("stopAutoRefresh failed:", error));
+
+  function errorState(error: unknown): SessionState {
+    return {
+      status: "error",
+      user: authState.user,
+      account: authState.account,
+      error,
+    };
+  }
+
+  /**
+   * Adopt a resolved session state and render it.
+   *
+   * The loop commits the state it awaited rather than trusting that
+   * `onStateChange` fired for it. Same values, so this is idempotent with what
+   * the callback already rendered — but the slot no longer depends on a
+   * callback having been invoked in order to show a final answer.
+   */
+  function commit(state: SessionState): void {
+    authState = {
+      user: state.user,
+      account: state.account,
+      status: state.status,
+      action: authState.action,
+    };
+    renderSlot();
+  }
+
+  /**
+   * An abandoned attempt that nevertheless produced a session.
+   *
+   * The timeout says "stop waiting", not "discard the answer". If a slow
+   * attempt eventually resolves with a real user while the slot is sitting on
+   * the error state, committing it late beats showing an error icon over a
+   * valid session. Deliberately narrow: it never overwrites a user we already
+   * have, and never resurrects a session over a newer, healthy signed-out
+   * answer.
+   */
+  function commitLate(token: number, state: SessionState): void {
+    if (destroyed) return;
+    if (!state.user || authState.user) return;
+    if (!connectGaveUp && authState.status !== "error") return;
+
+    connectGaveUp = false;
+    commit(state);
+    startTicker();
+    emitConnect({ phase: "recovered", reason: "late-response", attempt: token });
+  }
+
+  /** One bootstrap, failed rather than left hanging if the service never answers. */
+  function bootstrapOnce(): Promise<SessionState> {
+    const token = ++attemptToken;
+    lastAttemptAt = Date.now();
+
+    const run = bootstrapSession({
       auth: authAdapter,
       supabase,
+      completeCallback: !callbackConsumed,
       // Carry the previous user/account through the transient
       // bootstrapping/loading phases on rebootstrap (tab-focus revalidation),
       // avoiding the avatar → "Signing in…" flicker. null on first bootstrap
@@ -234,6 +463,14 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
           }
         : undefined,
       onStateChange: (state) => {
+        // Anything past the callback phase means the exchange is behind us.
+        if (
+          state.status !== "bootstrapping" &&
+          state.status !== "processing_callback"
+        ) {
+          callbackConsumed = true;
+        }
+        if (destroyed || connectGaveUp || token !== attemptToken) return;
         // Preserve any locally-tracked action (e.g. "signing_out").
         authState = {
           user: state.user,
@@ -243,16 +480,157 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
         };
         renderSlot();
       },
-    }).catch((error) => {
-      console.error(
-        `Bootstrap after ${reason} failed:`,
-        error instanceof Error ? error.message : error,
-      );
     });
+
+    // bootstrapSession resolves with an "error" state rather than rejecting, so
+    // the only outcome it cannot report is the one where a request never
+    // settles at all. The client-level fetch timeout covers most of that; this
+    // cap covers the rest of the pipeline (adapter logic, storage, a stalled
+    // promise chain) so an attempt always ends.
+    let timedOut = false;
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<SessionState>((resolve) => {
+      timeoutTimer = track(() => {
+        timedOut = true;
+        resolve(errorState(new RequestTimeoutError(connectTimeoutMs)));
+      }, connectTimeoutMs);
+    });
+
+    // Only an abandoned attempt needs the late path; one the loop is still
+    // awaiting is committed by the loop itself.
+    void run.then(
+      (state) => {
+        if (timedOut) commitLate(token, state);
+      },
+      () => {},
+    );
+
+    return Promise.race([run, timeout]).finally(() => {
+      if (timeoutTimer !== undefined) untrack(timeoutTimer);
+    });
+  }
+
+  function giveUp(reason: string, attempt: number, error: unknown): void {
+    connectGaveUp = true;
+    stopTicker();
+    authState = { ...authState, status: "error" };
+    renderSlot();
+    console.warn(
+      `Could not reach the account service after ${attempt} attempt(s); ` +
+        "showing the error state and stopping. Signed-out features are unaffected.",
+      error,
+    );
+    emitConnect({ phase: "gave_up", reason, attempt, error });
+  }
+
+  /**
+   * Bootstrap, retrying a failure until the connect budget is spent.
+   *
+   * The budget is the whole point: an app whose auth service is down should
+   * settle into a stated error and stop, not retry for as long as the tab is
+   * open. Attempts back off with jitter and stop at whichever of
+   * `connect.attempts` / `connect.giveUpMs` comes first — or immediately, if
+   * the failure is one that another identical request cannot fix.
+   */
+  async function runConnectLoop(gen: number, reason: string): Promise<void> {
+    const deadline = Date.now() + connectGiveUpMs;
+
+    for (let attempt = 1; ; attempt++) {
+      if (destroyed || gen !== loopGen) return;
+
+      // No point spending the budget with the radio off. The `online` listener
+      // resumes without waiting for a click.
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        giveUp(reason, attempt - 1, new Error("The browser is offline"));
+        return;
+      }
+
+      let state: SessionState;
+      try {
+        state = await bootstrapOnce();
+      } catch (error) {
+        console.error(
+          `Bootstrap after ${reason} failed:`,
+          error instanceof Error ? error.message : error,
+        );
+        state = errorState(error);
+      }
+
+      if (destroyed || gen !== loopGen) return;
+
+      if (state.status !== "error") {
+        commit(state);
+        // Reached the service. A signed-out visitor has no token to refresh, so
+        // the ticker stays stopped until a sign-in actually produces a session.
+        if (state.status === "anonymous") stopTicker();
+        else startTicker();
+        emitConnect({ phase: "connected", reason, attempt });
+        return;
+      }
+
+      // Reached the service, but a step after sign-in failed — the profile row
+      // or the account summary. The session is real and the avatar is correct;
+      // retrying the whole pipeline as if the host were down would burn the
+      // budget and then hide a live session behind an error icon.
+      if (state.user) {
+        commit(state);
+        startTicker();
+        console.warn(
+          "Signed in, but the account details could not be loaded:",
+          state.error,
+        );
+        emitConnect({ phase: "degraded", reason, attempt, error: state.error });
+        return;
+      }
+
+      const transient = isTransientError(state.error);
+      const backoffMs = computeBackoffMs(attempt);
+      const outOfAttempts = attempt >= connectAttempts;
+      const outOfTime = Date.now() + backoffMs > deadline;
+
+      if (!transient || outOfAttempts || outOfTime) {
+        giveUp(reason, attempt, state.error);
+        return;
+      }
+
+      emitConnect({
+        phase: "retrying",
+        reason,
+        attempt,
+        error: state.error,
+        nextRetryInMs: backoffMs,
+      });
+      await sleep(backoffMs);
+    }
+  }
+
+  function bootstrapSafe(reason: string): void {
+    if (destroyed || connectGaveUp) return;
+    // Supersedes any loop already running, so two triggers cannot share — and
+    // double — one budget.
+    const gen = ++loopGen;
+    void runConnectLoop(gen, reason);
+  }
+
+  /** Clear the give-up and spend a fresh budget. The error icon's click, and more. */
+  function reconnect(reason: string): void {
+    if (destroyed) return;
+    const wasGivenUp = connectGaveUp;
+    connectGaveUp = false;
+    if (!authState.user) {
+      authState = { ...authState, status: "bootstrapping" };
+      renderSlot();
+    }
+    if (wasGivenUp) {
+      emitConnect({ phase: "recovered", reason, attempt: 0 });
+    }
+    bootstrapSafe(reason);
   }
 
   const { data: authSub } = supabase.auth.onAuthStateChange(
     (event, session) => {
+      if (destroyed) return;
+
       if (event === "INITIAL_SESSION" && !initialBootstrapDone) {
         initialBootstrapDone = true;
         bootstrapSafe("INITIAL_SESSION");
@@ -277,7 +655,9 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
         return;
       }
       if (event === "SIGNED_OUT") {
-        bootstrapSafe("SIGNED_OUT");
+        // A signed-out visitor should see "Sign in", never a stale error icon —
+        // whatever the connection was doing beforehand.
+        reconnect("SIGNED_OUT");
         return;
       }
       if (event === "SIGNED_IN") {
@@ -286,7 +666,14 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
         const newId = session?.user?.id;
         const currentSub = authState.user?.sub;
         if (newId && currentSub && newId === currentSub) return;
-        bootstrapSafe("SIGNED_IN");
+        // A SIGNED_IN could only come from a service that answered, so it
+        // clears a give-up rather than being swallowed by it.
+        reconnect("SIGNED_IN");
+      }
+      if (event === "TOKEN_REFRESHED") {
+        // Same reasoning: proof of reachability. Nothing else to do when the
+        // connection was already healthy.
+        if (connectGaveUp) reconnect("TOKEN_REFRESHED");
       }
       if (event === "PASSWORD_RECOVERY") {
         if (!tabHasRecoveryUrl) return;
@@ -295,9 +682,26 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
     },
   );
 
+  // Most failures here are a flaky client network, not a downed service.
+  // Coming back online is direct evidence that retrying is worth it.
+  const onOnline = () => {
+    if (connectGaveUp) reconnect("online");
+  };
+  window.addEventListener("online", onOnline);
+
+  // A tab left on the error icon for long enough is worth one quiet recheck
+  // when the user comes back to it. Rate-limited so focus-flipping cannot
+  // become a retry loop by hand.
+  const onVisibilityChange = () => {
+    if (document.visibilityState !== "visible" || !connectGaveUp) return;
+    if (Date.now() - lastAttemptAt < connectRecheckAfterMs) return;
+    reconnect("visibilitychange");
+  };
+  document.addEventListener("visibilitychange", onVisibilityChange);
+
   // Safety net: if INITIAL_SESSION never fires within 2s, bootstrap anyway so
   // the slot never sticks on the "Signing in…" placeholder.
-  const fallbackTimer = setTimeout(() => {
+  track(() => {
     if (!initialBootstrapDone) {
       initialBootstrapDone = true;
       bootstrapSafe("timeout-fallback");
@@ -311,13 +715,22 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
     supabase,
     authAdapter,
     getState: () => authState,
-    openSignIn: () => signInModal?.open(),
+    openSignIn,
+    reconnect: () => reconnect("manual"),
     signOut,
     destroy: () => {
+      destroyed = true;
+      // Any loop mid-backoff returns at its next await instead of waking up
+      // and rendering into a torn-down page.
+      loopGen++;
       window.removeEventListener(signInRequestedEvent, onSignInRequested);
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       unwireAvatarMenu();
       authSub?.subscription?.unsubscribe();
-      clearTimeout(fallbackTimer);
+      for (const timer of timers) clearTimeout(timer);
+      timers.clear();
+      stopTicker();
     },
   };
 }

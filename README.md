@@ -41,8 +41,25 @@ bootstrapAuth({
 });
 ```
 
-Options: `slot`, `portalUrl`/`profilePath`, `defaultRedirectTo`/`logoutRedirectTo`, `oauthRedirectTo`, `onAuthChange`, `mountModal`. Returns
-`{ supabase, authAdapter, getState, openSignIn, signOut, destroy }`.
+Options: `slot`, `portalUrl`/`profilePath`, `defaultRedirectTo`/`logoutRedirectTo`, `oauthRedirectTo`, `onAuthChange`, `onConnectState`, `mountModal`, `connect`. Returns
+`{ supabase, authAdapter, getState, openSignIn, reconnect, signOut, destroy }`.
+
+### When the account service is unreachable
+
+Auth is not on the critical path — signed-out visitors keep the whole app — so a downed account service is a degraded corner of the navbar, not a page that retries forever. `bootstrapAuth` spends a
+bounded budget (3 attempts inside 60s, 10s each by default), then renders a retry-able error icon in the slot and stops, leaving nothing running in the background. It resumes on its own when the
+browser comes back `online`, on a tab focus after 5 minutes, on any auth event that proves the service answered, or when the user clicks the icon.
+
+```js
+bootstrapAuth({
+  // …
+  connect: {attempts: 3, timeoutMs: 10_000, giveUpMs: 60_000, recheckAfterMs: 300_000},
+  onConnectState: (e) => telemetry.record(e), // connected | degraded | retrying | gave_up | recovered
+});
+```
+
+Permanent failures (a 4xx, an RLS denial) short-circuit the budget instead of spending it. If sign-in succeeds but the profile row does not load, the avatar stays and the failure is reported as
+`degraded` rather than hiding a live session behind an error icon.
 
 Apps that own their own orchestration (e.g. the portal) compose the `/core` primitives directly: `createGeoglowsSupabaseClient`, `createSupabaseAuthAdapter`, `bootstrapSession`, `mountSignInModal`,
 `renderAuthAction`, `detectRecoveryUrlState`, plus `escapeHtml` / `sanitizeHref`.

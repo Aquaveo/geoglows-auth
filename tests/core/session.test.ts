@@ -374,4 +374,35 @@ describe("bootstrapSession with the Supabase Auth adapter", () => {
     expect((final.error as Error).message).toMatch(/rls denied/);
     expect(final.user?.sub).toBe("supabase-user-uuid");
   });
+
+  it("skips the callback exchange when completeCallback is false", async () => {
+    client.auth.getSession.mockResolvedValue({
+      data: { session: buildSession() },
+      error: null,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const adapter = createSupabaseAuthAdapter({ supabase: client as any });
+
+    // A callback URL carrying a provider error: running the callback stage
+    // against it fails the bootstrap.
+    setUrl("http://localhost/?error=access_denied&error_description=denied");
+    const withCallback = await bootstrapSession({
+      auth: adapter,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase: client as any,
+    });
+    expect(withCallback.status).toBe("error");
+
+    // Skipping it — as a retry does, because the code is already spent —
+    // reaches the session through getSession instead.
+    setUrl("http://localhost/?error=access_denied&error_description=denied");
+    const skipped = await bootstrapSession({
+      auth: adapter,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase: client as any,
+      completeCallback: false,
+    });
+    expect(skipped.status).toBe("ready");
+    expect(skipped.user?.sub).toBe("supabase-user-uuid");
+  });
 });

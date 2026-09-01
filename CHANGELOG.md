@@ -5,6 +5,114 @@ All notable changes to `@aquaveo/geoglows-auth` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] — 2026-09-01
+
+Resilience release. An unreachable account service used to leave a portal
+retrying for the length of the tab: Supabase's own token ticker retried every
+30s against a session it could not redeem, the bootstrap had no timeout, and
+the navbar offered a "Sign in" button whose modal could not possibly work.
+Auth is never on the critical path of these apps — the map, the data and every
+read-only feature work signed out — so an unreachable auth service is now a
+degraded corner of the UI that states itself, stops, and recovers on its own
+when the service comes back.
+
+### Added
+
+- **Connect budget (`bootstrapAuth({ connect })`).** Bounds how hard a page
+  tries to reach the account service: `attempts` (default 3), `timeoutMs` (per
+  attempt, default 10s), `giveUpMs` (wall clock across all attempts, default
+  60s), `recheckAfterMs` (shortest gap before a tab-focus recheck, default 5
+  min). Values are clamped — `attempts: 0` no longer gives up before trying.
+  When the budget is spent the navbar renders an error icon and everything
+  stops.
+- **Automatic recovery from a given-up connection.** Giving up is not
+  permanent. Coming back `online`, a tab focus after `recheckAfterMs`, a
+  `SIGNED_IN` / `SIGNED_OUT` / `TOKEN_REFRESHED` event (each of which is proof
+  the service answered), a click on the error icon, or a sign-in request all
+  resume. A tab that gave up while the user was on a train now heals itself
+  instead of showing a red triangle until reload.
+- **`renderAuthAction` error state.** `status === "error"` with no user renders
+  a retry-able error icon (`#geoglowsAuthRetry`) instead of the sign-in button —
+  offering a form backed by a dead service is worse than saying it is dead. New
+  stable element ID; new `.geoglows-auth-action-error` styles in `sign-in.css`,
+  sized to the avatar it stands in for so the navbar does not reflow, with a
+  dark-theme variant.
+- **`AuthHandle.reconnect()`.** Clears a given-up connection and spends a fresh
+  budget. Safe to call at any time.
+- **`BootstrapAuthConfig.onConnectState`.** Reports every turn of the budget
+  (`connected` / `degraded` / `retrying` / `gave_up` / `recovered`) with the
+  attempt number, the triggering reason and the error, so consumers can send
+  this to their telemetry instead of relying on `console`.
+- **`SupabaseFactoryOptions.fetchTimeoutMs`.** Installs a timeout-wrapping
+  `fetch` on the Supabase client, so *every* call it makes is bounded — session
+  reads, profile reads and writes, sign-in, password reset — not just the
+  bootstrap. Aborts at the transport layer, which stops the work rather than
+  only stopping the wait, and chains (never replaces) a caller-supplied
+  `signal`. Omitted by default, preserving current behaviour. `bootstrapAuth`
+  passes `connect.timeoutMs`.
+- **`SupabaseFactoryOptions.autoRefreshToken`.** Defaults to `true` (Supabase's
+  own default). `bootstrapAuth` now passes `false` and drives
+  `startAutoRefresh()` / `stopAutoRefresh()` itself, so the ticker runs only
+  while a session actually exists to refresh. Left on the default it runs from
+  client construction to the end of the page, and against a stored session it
+  cannot redeem it becomes a retry storm every 30s for as long as the tab is
+  open.
+- **`src/core/retry.ts`.** `isTransientError` (transient vs permanent failure
+  classification), `computeBackoffMs` (exponential backoff with jitter) and
+  `RequestTimeoutError`. Exported from the `core` surface.
+- **`BootstrapSessionOptions.completeCallback`.** Defaults to `true`. Set
+  `false` to skip the OAuth code exchange on a re-run; an authorization code is
+  single-use, so a retry that replays it fails with a different and more
+  confusing error than the one being retried. `bootstrapAuth` sets it
+  automatically once an attempt has consumed the callback.
+- **Tests for `src/bootstrap/`,** which previously had none: the give-up path,
+  permanent-failure short-circuiting, degraded sign-in, the retry button,
+  `online` / `SIGNED_OUT` recovery, ticker start/stop, teardown mid-backoff,
+  superseded and late attempt results, and budget clamping. Plus coverage for
+  `retry.ts`, `fetchTimeoutMs` and `completeCallback`.
+
+### Changed
+
+- **Retries are classified, not blind.** A permanent failure — an RLS denial, a
+  4xx, a constraint violation — now stops the budget immediately instead of
+  spending every attempt on a request that can never succeed and then reporting
+  "service unavailable" for what is really a permission problem.
+- **Partial degradation.** Auth reachable + profile unreachable is no longer
+  treated as auth unreachable: when the session is real but `ensureProfile` or
+  `loadAccountSummary` failed, the avatar stays and the failure is reported as
+  `degraded`, rather than hiding a live session behind an error icon.
+- **Backoff is jittered.** Fixed 1s/2s/4s meant every tab open against a shared
+  outage retried in lockstep and hit the recovering service at once.
+- **The sign-in modal is not offered while the service is unreachable.**
+  `openSignIn()` (and the `geoglows:sign-in-requested` event) triggers a
+  reconnect instead of opening a form that cannot submit.
+
+### Fixed
+
+- **Concurrent retry loops.** Nothing stopped a second trigger (`SIGNED_OUT`,
+  `SIGNED_IN`) from starting a second loop while the first was mid-backoff,
+  each with its own attempt counter and deadline — so the budget was silently
+  doubled. A generation counter now supersedes the older loop.
+- **`destroy()` did not stop a retry loop.** The backoff sleep was untracked,
+  so after teardown the loop woke up and bootstrapped into a torn-down page
+  (visible under HMR). All timers are tracked and cleared, and the loop exits
+  at its next await.
+- **A leaked per-attempt timeout handle.** The timeout timer was stored in one
+  module-scope variable written by every attempt, so overlapping attempts
+  cleared each other's handle.
+- **The retry button started the token ticker before knowing a session
+  existed** — briefly reproducing the exact retry storm the ticker control was
+  added to prevent.
+- **A given-up connection swallowed genuine auth events.** A `SIGNED_OUT` in
+  another tab left this one showing an error icon instead of "Sign in",
+  permanently.
+- **A late-arriving valid session is no longer discarded.** A response that
+  lands just after its attempt timed out is committed if the slot is showing
+  the error state and nothing better has arrived — better late than an error
+  icon over a live session.
+- **Ticker failures are no longer swallowed silently** (`console.debug` instead
+  of an empty `catch`).
+
 ## [1.7.4] — 2026-08-28
 
 ### Changed

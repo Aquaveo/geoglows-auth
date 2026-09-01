@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { createGeoglowsSupabaseClient } from "../../src/core/supabase";
+import { RequestTimeoutError } from "../../src/core/retry";
 import type { AuthAdapter, AuthUser } from "../../src/types";
 
 vi.mock("@supabase/supabase-js", () => ({
@@ -179,6 +180,115 @@ describe("createGeoglowsSupabaseClient", () => {
           publishableKey: "",
         }),
       ).toThrow(/publishable key is required/i);
+    });
+  });
+
+  describe("autoRefreshToken", () => {
+    it("leaves Supabase's own refresh scheduling alone by default", () => {
+      createGeoglowsSupabaseClient({
+        url: "https://x.supabase.co",
+        publishableKey: "key",
+      });
+
+      expect(createClientMock.mock.calls[0]).toHaveLength(2);
+    });
+
+    it("disables Supabase's refresh scheduling when asked", () => {
+      createGeoglowsSupabaseClient({
+        url: "https://x.supabase.co",
+        publishableKey: "key",
+        autoRefreshToken: false,
+      });
+
+      const options = createClientMock.mock.calls[0][2];
+      expect(options?.auth?.autoRefreshToken).toBe(false);
+    });
+  });
+
+  describe("fetchTimeoutMs", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    });
+
+    function wrappedFetch(timeoutMs: number) {
+      createGeoglowsSupabaseClient({
+        url: "https://x.supabase.co",
+        publishableKey: "key",
+        fetchTimeoutMs: timeoutMs,
+      });
+      const options = createClientMock.mock.calls[0][2];
+      return options?.global?.fetch as typeof fetch;
+    }
+
+    it("installs no fetch wrapper by default", () => {
+      createGeoglowsSupabaseClient({
+        url: "https://x.supabase.co",
+        publishableKey: "key",
+      });
+
+      expect(createClientMock.mock.calls[0]).toHaveLength(2);
+    });
+
+    it("aborts a request that outlives the timeout", async () => {
+      vi.useFakeTimers();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          (_input: unknown, init?: RequestInit) =>
+            new Promise<Response>((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () =>
+                reject(init.signal?.reason),
+              );
+            }),
+        ),
+      );
+
+      const settled = wrappedFetch(5000)("https://x.supabase.co/rest/v1/profiles")
+        .then(() => null)
+        .catch((error: unknown) => error);
+
+      await vi.advanceTimersByTimeAsync(5001);
+
+      expect(await settled).toBeInstanceOf(RequestTimeoutError);
+    });
+
+    it("passes a fast response through untouched", async () => {
+      const response = { ok: true } as Response;
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+      await expect(
+        wrappedFetch(5000)("https://x.supabase.co/rest/v1/profiles"),
+      ).resolves.toBe(response);
+    });
+
+    it("chains a caller-supplied signal rather than replacing it", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          (_input: unknown, init?: RequestInit) =>
+            new Promise<Response>((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () =>
+                reject(init.signal?.reason),
+              );
+            }),
+        ),
+      );
+
+      const controller = new AbortController();
+      const settled = wrappedFetch(60_000)(
+        "https://x.supabase.co/rest/v1/profiles",
+        { signal: controller.signal },
+      )
+        .then(() => null)
+        .catch((error: unknown) => error);
+
+      controller.abort(new Error("caller cancelled"));
+
+      expect((await settled) as Error).toHaveProperty(
+        "message",
+        "caller cancelled",
+      );
     });
   });
 });

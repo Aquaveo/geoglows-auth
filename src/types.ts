@@ -150,6 +150,33 @@ export interface SupabaseFactoryOptions {
    */
   auth?: AuthAdapter | null;
   useIdToken?: boolean;
+  /**
+   * Whether Supabase runs its own background token refresh. Default `true`,
+   * which is Supabase's own default: a 30s `setInterval` plus a
+   * visibilitychange handler, started at client construction and never stopped.
+   *
+   * Pass `false` to own that decision — `supabase.auth.startAutoRefresh()` /
+   * `stopAutoRefresh()` then bound it to the times a session actually exists.
+   * That matters when the auth service may be unreachable: a stored session
+   * whose refresh token cannot be redeemed makes every tick retry, with
+   * internal backoff, for as long as the tab is open.
+   */
+  autoRefreshToken?: boolean;
+  /**
+   * Abort any Supabase request that has not answered within this many
+   * milliseconds. Omitted (the default) means no timeout, matching
+   * `@supabase/supabase-js` behaviour — a request against an unreachable host
+   * stays pending for as long as the browser allows.
+   *
+   * Set it and every call the client makes is bounded: session reads, profile
+   * reads and writes, sign-in, password reset. Aborting at the transport layer
+   * is what distinguishes this from racing a promise at one call site — the
+   * latter stops the waiting, this stops the work.
+   *
+   * The rejection is a `RequestTimeoutError` (see `./core/retry`), which
+   * `isTransientError` classifies as worth retrying.
+   */
+  fetchTimeoutMs?: number;
 }
 
 export interface AuthContextValue {

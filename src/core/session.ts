@@ -24,6 +24,16 @@ export interface BootstrapSessionOptions {
   supabase: GeoglowsSupabaseClient;
   syncProfile?: boolean;
   loadAccount?: boolean;
+  /**
+   * Run `auth.completeSignInIfNeeded()` — the OAuth callback exchange. Default
+   * `true`.
+   *
+   * Pass `false` when re-running bootstrap after a failure that happened
+   * *after* the callback was already consumed. An authorization code is
+   * single-use: a retry that replays the exchange fails with a different and
+   * more confusing error than the one being retried.
+   */
+  completeCallback?: boolean;
   onStateChange?: (state: SessionState) => void;
   /**
    * Optional baseline state — pass the consumer's currently-known
@@ -102,6 +112,7 @@ export async function bootstrapSession({
   supabase,
   syncProfile = true,
   loadAccount = true,
+  completeCallback = true,
   onStateChange,
   initialState,
 }: BootstrapSessionOptions): Promise<SessionState> {
@@ -132,7 +143,9 @@ export async function bootstrapSession({
     await auth.clearStaleAuthState();
 
     emit({ status: "processing_callback" });
-    const callbackUser = await auth.completeSignInIfNeeded();
+    const callbackUser = completeCallback
+      ? await auth.completeSignInIfNeeded()
+      : null;
     currentUser = callbackUser ?? (await auth.getCurrentUser());
 
     if (!currentUser) {
