@@ -1,4 +1,10 @@
-import type { Session, User } from "@supabase/supabase-js";
+import {
+  isAuthApiError,
+  isAuthSessionMissingError,
+  type Session,
+  type SupabaseClient,
+  type User,
+} from "@supabase/supabase-js";
 import type {
   AuthUser,
   SupabaseAuthAdapter,
@@ -64,6 +70,68 @@ function stripAuthParamsFromUrl() {
   window.history.replaceState({}, document.title, cleanUrl);
 }
 
+/**
+ * The service answered and rejected the token. That is "signed out", not
+ * "unreachable": a 401/403 is the server's verdict on a stale or revoked
+ * session, and a 404 is a user that no longer exists.
+ */
+function isSessionRejected(error: unknown): boolean {
+  if (isAuthSessionMissingError(error)) return true;
+  return (
+    isAuthApiError(error) &&
+    (error.status === 401 || error.status === 403 || error.status === 404)
+  );
+}
+
+/**
+ * One round trip to prove the account service is up. Any HTTP answer below
+ * 500 — including a 401 from a gateway that wants a different key — means it
+ * is reachable; a transport failure rejects with fetch's TypeError, and a 5xx
+ * rejects with a status the retry policy classifies as transient.
+ */
+async function probeService(url: string, publishableKey: string): Promise<void> {
+  const response = await fetch(`${url.replace(/\/+$/, "")}/auth/v1/health`, {
+    headers: { apikey: publishableKey },
+    cache: "no-store",
+  });
+  if (response.status >= 500) {
+    throw Object.assign(
+      new Error(`Account service responded ${response.status}`),
+      { status: response.status },
+    );
+  }
+}
+
+/**
+ * Drop the stored session without asking the server.
+ *
+ * `supabase.auth.signOut()` — with any scope — only removes the stored session
+ * once the server has acknowledged the sign-out, so an unreachable service
+ * leaves the visitor signed in with no way out short of clearing site data.
+ * The storage key is what the client actually uses, read off the auth client
+ * rather than recomputed from the URL, so a custom `storageKey` is honoured.
+ */
+async function forgetLocalSession(supabase: SupabaseClient): Promise<void> {
+  const auth = supabase.auth as unknown as {
+    storageKey?: unknown;
+    storage?: { removeItem?: (key: string) => unknown };
+  };
+  if (typeof auth.storageKey !== "string" || !auth.storageKey) return;
+  const keys = [auth.storageKey, `${auth.storageKey}-code-verifier`];
+  for (const key of keys) {
+    try {
+      await auth.storage?.removeItem?.(key);
+    } catch {
+      // fall through to the default storage
+    }
+    try {
+      globalThis.localStorage?.removeItem(key);
+    } catch {
+      // storage access can throw (privacy mode); nothing more to do
+    }
+  }
+}
+
 export function createSupabaseAuthAdapter(
   config: SupabaseAuthConfig,
 ): SupabaseAuthAdapter {
@@ -126,6 +194,35 @@ export function createSupabaseAuthAdapter(
       return mapUser(data.session);
     },
 
+    async verifySession() {
+      // getSession() reads storage. It only reaches the network to refresh an
+      // expired token — and a refresh that could not reach the service is a
+      // connect failure, not a signed-out visitor.
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
+
+      const session = data.session;
+      if (!session) {
+        if (config.supabaseUrl && config.supabasePublishableKey) {
+          await probeService(config.supabaseUrl, config.supabasePublishableKey);
+        }
+        return null;
+      }
+
+      // Only the server can say whether a stored token is still good.
+      const verified = await supabase.auth.getUser(session.access_token);
+      if (verified.error) {
+        if (isSessionRejected(verified.error)) {
+          // The server said no: forget the token so the next load does not
+          // ask again, and report signed out.
+          await forgetLocalSession(supabase);
+          return null;
+        }
+        throw verified.error;
+      }
+      return mapUser(session);
+    },
+
     async signInRedirect() {
       // Password and magic-link flows do not redirect — the consumer-rendered
       // form handles those. For the OAuth flow, the consumer should call
@@ -135,7 +232,13 @@ export function createSupabaseAuthAdapter(
     async signOutRedirect() {
       const { error } = await supabase.auth.signOut();
       if (error) {
-        console.warn("Supabase signOut failed:", error);
+        // The server did not acknowledge, so supabase-js kept the stored
+        // session. The visitor asked to leave; honour that locally.
+        console.warn(
+          "Supabase signOut failed; clearing the local session:",
+          error,
+        );
+        await forgetLocalSession(supabase);
       }
 
       const redirectTo = config.logoutRedirectTo;

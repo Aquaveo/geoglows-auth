@@ -2,6 +2,7 @@ import type { AuthUser } from "../types";
 import type { AccountSummary } from "./account";
 import { getUserDisplayInfo, type SessionStatus } from "./session";
 import { escapeHtml, sanitizeHref } from "./escape";
+import { getAuthMessages } from "./i18n";
 
 /**
  * Statuses that render the loading pill. Centralized so future additions to
@@ -49,6 +50,12 @@ export interface AuthActionState {
  */
 export interface AuthActionOptions {
   profileHref?: string | null;
+  /**
+   * BCP 47 tag (or preference list) for the slot's visitor-facing text.
+   * Default: the browser's `navigator.languages`, falling back to English.
+   * Pass the app's own selected language when it has a switcher.
+   */
+  language?: readonly string[] | string | null;
 }
 
 /**
@@ -81,6 +88,7 @@ export function renderAuthAction(
   const rawProfileHref =
     options.profileHref === undefined ? "/profile" : options.profileHref;
   const profileHref = sanitizeHref(rawProfileHref);
+  const messages = getAuthMessages(options.language);
 
   // If we have a user, prefer the avatar even during transient loading
   // statuses. This protects against the visible flicker that would otherwise
@@ -100,8 +108,8 @@ export function renderAuthAction(
           type="button"
           id="geoglowsAuthRetry"
           class="geoglows-auth-action-error"
-          aria-label="Account service unavailable. Retry."
-          title="Could not reach the account service. Click to try again."
+          aria-label="${escapeHtml(messages.serviceUnavailable)}"
+          title="${escapeHtml(messages.serviceUnavailable)}"
         >
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M12 9v4" />
@@ -112,11 +120,19 @@ export function renderAuthAction(
       `;
     }
 
+    // Still finding out whether there is a session. A spinner in the avatar's
+    // footprint, not a "Sign in" button: the button would be a lie half the
+    // time (the visitor may well be signed in), and it would jump to the avatar
+    // a moment later.
     if (LOADING_STATUSES.has(status)) {
       return `
-        <div class="geoglows-auth-action-loading" role="status" aria-live="polite">
-          <span class="geoglows-auth-action-loading-dot" aria-hidden="true"></span>
-          Signing in…
+        <div
+          class="geoglows-auth-action-loading"
+          role="status"
+          aria-live="polite"
+          aria-label="Connecting to the account service"
+        >
+          <span class="geoglows-auth-action-loading-spinner" aria-hidden="true"></span>
         </div>
       `;
     }

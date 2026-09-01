@@ -238,30 +238,39 @@
 
 /* Auth action — sign-in button / avatar dropdown */
 
+/* Sized to the avatar it stands in for, so the navbar does not reflow when the
+   answer arrives. */
 .geoglows-auth-action-loading {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.75rem;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
   background: #f1f5f9;
   color: #475569;
-  font-size: 0.875rem;
 }
-.geoglows-auth-action-loading-dot {
+.geoglows-auth-action-loading-spinner {
   display: inline-block;
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 1.25rem;
+  height: 1.25rem;
   border-radius: 9999px;
-  background: #3b82f6;
-  animation: geoglows-auth-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  opacity: 0.8;
+  animation: geoglows-auth-spin 0.9s linear infinite;
 }
-@keyframes geoglows-auth-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+@keyframes geoglows-auth-spin {
+  to { transform: rotate(360deg); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .geoglows-auth-action-loading-dot { animation: none; }
+  .geoglows-auth-action-loading-spinner {
+    animation: geoglows-auth-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+@keyframes geoglows-auth-pulse {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 0.3; }
 }
 
 .geoglows-auth-action-signin {

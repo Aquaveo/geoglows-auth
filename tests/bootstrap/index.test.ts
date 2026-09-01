@@ -167,6 +167,62 @@ describe("bootstrapAuth connect budget", () => {
     handle.destroy();
   });
 
+  it("shows the spinner before the service has answered, never the sign-in button", async () => {
+    // Never resolves: the service is still being reached.
+    bootstrapSessionMock.mockReturnValue(new Promise(() => {}));
+
+    const handle = bootstrapAuth({
+      supabaseUrl: "https://x.supabase.co",
+      supabasePublishableKey: "key",
+      connect: { attempts: 1, timeoutMs: 60_000 },
+    });
+
+    expect(harness.slot.innerHTML).toContain("geoglows-auth-action-loading");
+    expect(harness.slot.innerHTML).not.toContain('id="geoglowsSignIn"');
+
+    harness.fire("INITIAL_SESSION");
+    await tick(1000);
+
+    expect(harness.slot.innerHTML).toContain("geoglows-auth-action-loading");
+    expect(harness.slot.innerHTML).not.toContain('id="geoglowsSignIn"');
+    expect(harness.slot.innerHTML).not.toContain('id="geoglowsAuthRetry"');
+
+    handle.destroy();
+  });
+
+  it("keeps the spinner up between attempts instead of flashing the error icon", async () => {
+    // The real pipeline reports each attempt's failure through onStateChange
+    // before resolving; the slot must not render that while budget remains.
+    bootstrapSessionMock.mockImplementation(async (opts) => {
+      const state = failure(networkError());
+      opts.onStateChange?.(state);
+      return state;
+    });
+
+    const handle = bootstrapAuth({
+      supabaseUrl: "https://x.supabase.co",
+      supabasePublishableKey: "key",
+      connect: { attempts: 2, timeoutMs: 1000, giveUpMs: 60_000 },
+    });
+
+    harness.fire("INITIAL_SESSION");
+    // Inside the first backoff (>= 500ms): one attempt down, one to go.
+    await tick(100);
+
+    expect(bootstrapSessionMock).toHaveBeenCalledTimes(1);
+    expect(harness.slot.innerHTML).toContain("geoglows-auth-action-loading");
+    expect(harness.slot.innerHTML).not.toContain('id="geoglowsAuthRetry"');
+    expect(handle.getState().status).toBe("bootstrapping");
+
+    await tick(60_000);
+
+    expect(bootstrapSessionMock).toHaveBeenCalledTimes(2);
+    expect(harness.slot.innerHTML).toContain('id="geoglowsAuthRetry"');
+    expect(harness.slot.innerHTML).not.toContain("geoglows-auth-action-loading");
+
+    handle.destroy();
+  });
+
   it("stops the budget immediately when the failure is permanent", async () => {
     bootstrapSessionMock.mockResolvedValue(failure(permissionError()));
 

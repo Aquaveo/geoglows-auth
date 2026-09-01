@@ -146,7 +146,16 @@ export async function bootstrapSession({
     const callbackUser = completeCallback
       ? await auth.completeSignInIfNeeded()
       : null;
-    currentUser = callbackUser ?? (await auth.getCurrentUser());
+    // `getCurrentUser` on the Supabase adapter reads local storage and never
+    // touches the network, so it cannot tell "signed in" from "the service is
+    // down and there is a stale token in storage". `verifySession` asks the
+    // server, and rejects when it cannot — which lands in the `error` state
+    // below with no user, where the connect budget belongs.
+    currentUser =
+      callbackUser ??
+      (await (auth.verifySession
+        ? auth.verifySession()
+        : auth.getCurrentUser()));
 
     if (!currentUser) {
       return emit({

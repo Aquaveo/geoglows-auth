@@ -19,7 +19,7 @@ when the service comes back.
 ### Added
 
 - **Connect budget (`bootstrapAuth({ connect })`).** Bounds how hard a page
-  tries to reach the account service: `attempts` (default 3), `timeoutMs` (per
+  tries to reach the account service: `attempts` (default 2), `timeoutMs` (per
   attempt, default 10s), `giveUpMs` (wall clock across all attempts, default
   60s), `recheckAfterMs` (shortest gap before a tab-focus recheck, default 5
   min). Values are clamped — `attempts: 0` no longer gives up before trying.
@@ -71,8 +71,27 @@ when the service comes back.
   superseded and late attempt results, and budget clamping. Plus coverage for
   `retry.ts`, `fetchTimeoutMs` and `completeCallback`.
 
+### Added
+
+- **Translated error tooltip.** The error icon's tooltip and accessible name
+  ("Unable to log in to GEOGLOWS accounts at this time") follow the browser's
+  `navigator.languages` — Spanish, French, Portuguese, Arabic, Chinese, Hindi
+  and Russian, falling back to English. Region tags match their base language
+  (`pt-BR` → `pt`). `renderAuthAction({ language })` and
+  `bootstrapAuth({ language })` override the browser for apps with their own
+  language switcher. `resolveLanguage` / `getAuthMessages` /
+  `SUPPORTED_LANGUAGES` are exported from `core`.
+
 ### Changed
 
+- **The loading state is a spinner, not a "Signing in…" pill.** Until the
+  account service has said whether there is a session, the slot shows a
+  spinner in the avatar's footprint (`.geoglows-auth-action-loading` /
+  `.geoglows-auth-action-loading-spinner`, with a reduced-motion pulse and a
+  dark variant) rather than a sign-in button that may be wrong and a moment
+  later jumps to the avatar. It renders synchronously from `bootstrapAuth` and
+  stays up through retry backoff: a failed attempt with budget remaining no
+  longer flashes the error icon between attempts.
 - **Retries are classified, not blind.** A permanent failure — an RLS denial, a
   4xx, a constraint violation — now stops the budget immediately instead of
   spending every attempt on a request that can never succeed and then reporting
@@ -89,6 +108,21 @@ when the service comes back.
 
 ### Fixed
 
+- **A stored session no longer passes for a reachable service.** The Supabase
+  adapter's `getCurrentUser` reads local storage and never touches the network,
+  so with the account service down and a token in storage the slot showed the
+  avatar and reported the profile load as `degraded` — while the service had
+  never been reached at all. `bootstrapSession` now prefers the adapter's new
+  `verifySession`, which confirms a stored token with `auth.getUser()`, forgets
+  a token the server rejects, and for a signed-out visitor makes one round trip
+  to `/auth/v1/health` (when `bootstrapAuth` has the project URL) so "no
+  session" and "no service" stay distinct. A failure rejects into the `error`
+  state with no user, where the connect budget handles it. Adapters without
+  `verifySession` fall back to `getCurrentUser` as before.
+- **Sign-out works while the service is unreachable.** `supabase.auth.signOut()`
+  keeps the stored session unless the server acknowledges, so a downed service
+  left the visitor signed in with no way out. `signOutRedirect` now clears the
+  stored session itself when the call fails, then redirects as usual.
 - **Concurrent retry loops.** Nothing stopped a second trigger (`SIGNED_OUT`,
   `SIGNED_IN`) from starting a second loop while the first was mid-backoff,
   each with its own attempt counter and deadline — so the budget was silently

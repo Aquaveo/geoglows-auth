@@ -5,6 +5,7 @@ import { createSupabaseAuthAdapter } from "../../src/core/supabase-auth";
 interface MockSupabaseClient {
   auth: {
     getSession: ReturnType<typeof vi.fn>;
+    getUser: ReturnType<typeof vi.fn>;
     signOut: ReturnType<typeof vi.fn>;
     onAuthStateChange: ReturnType<typeof vi.fn>;
     exchangeCodeForSession: ReturnType<typeof vi.fn>;
@@ -90,6 +91,11 @@ function buildClient(opts: { existingProfile?: boolean } = {}): ClientMocks {
   const client: MockSupabaseClient = {
     auth: {
       getSession: vi.fn(),
+      // The server confirms whatever getSession hands back unless a test says
+      // otherwise.
+      getUser: vi.fn(() =>
+        Promise.resolve({ data: { user: buildSession().user }, error: null }),
+      ),
       signOut: vi.fn().mockResolvedValue({ error: null }),
       onAuthStateChange: vi.fn(() => ({
         data: { subscription: { unsubscribe: vi.fn() } },
@@ -122,6 +128,27 @@ describe("bootstrapSession with the Supabase Auth adapter", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("lands in error with no user when the stored session cannot be verified", async () => {
+    client.auth.getSession.mockResolvedValue({
+      data: { session: buildSession() },
+      error: null,
+    });
+    client.auth.getUser.mockResolvedValue({
+      data: { user: null },
+      error: new TypeError("Failed to fetch"),
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const adapter = createSupabaseAuthAdapter({ supabase: client as any });
+    const state = await bootstrapSession({ auth: adapter, supabase: client as never });
+
+    // A stale token in storage is not a signed-in user: the service was never
+    // reached, so this is the connect budget's problem, not the avatar's.
+    expect(state.status).toBe("error");
+    expect(state.user).toBeNull();
+    expect(mocks.profilesMaybeSingle).not.toHaveBeenCalled();
   });
 
   it("walks through bootstrapping → ready when a session exists", async () => {

@@ -53,7 +53,7 @@ export interface ConnectEvent {
 
 /** Connect-budget tuning. See {@link BootstrapAuthConfig.connect}. */
 export interface ConnectConfig {
-  /** Total attempts, including the first. Default 3. Clamped to >= 1. */
+  /** Total attempts, including the first. Default 2. Clamped to >= 1. */
   attempts?: number;
   /** Cap on a single attempt before it is treated as a failure. Default 10_000. */
   timeoutMs?: number;
@@ -88,6 +88,12 @@ export interface BootstrapAuthConfig {
   portalUrl?: string;
   /** Portal profile route appended to {@link BootstrapAuthConfig.portalUrl}. Default `"/profile"`. */
   profilePath?: string;
+  /**
+   * Language for the slot's visitor-facing text (BCP 47 tag or preference
+   * list). Default: the browser's `navigator.languages`, falling back to
+   * English. Set it when the app has its own language switcher.
+   */
+  language?: readonly string[] | string | null;
   /** Post-auth redirect. Default: `() => location.origin + location.pathname`. */
   defaultRedirectTo?: () => string;
   /** Post-sign-out redirect. Default: `() => location.origin`. */
@@ -126,7 +132,7 @@ export interface BootstrapAuthConfig {
    * `recheckAfterMs`, an auth event that proves the service answered, or a
    * click on the error icon all resume.
    *
-   * Defaults: 3 attempts inside 60s, each attempt capped at 10s.
+   * Defaults: 2 attempts inside 60s, each attempt capped at 10s.
    */
   connect?: ConnectConfig;
 }
@@ -172,6 +178,7 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
     slot = "#auth-action",
     portalUrl = "",
     profilePath = "/profile",
+    language,
     defaultRedirectTo = () => window.location.origin + window.location.pathname,
     logoutRedirectTo = () => window.location.origin,
     onAuthChange,
@@ -184,7 +191,7 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
 
   // Clamped rather than trusted: `attempts: 0` would otherwise give up before
   // trying at all, and a negative timeout would fail every attempt instantly.
-  const connectAttempts = Math.max(1, Math.floor(connect.attempts ?? 3));
+  const connectAttempts = Math.max(1, Math.floor(connect.attempts ?? 2));
   const connectTimeoutMs = Math.max(1000, connect.timeoutMs ?? 10_000);
   const connectGiveUpMs = Math.max(connectTimeoutMs, connect.giveUpMs ?? 60_000);
   const connectRecheckAfterMs = Math.max(0, connect.recheckAfterMs ?? 300_000);
@@ -207,6 +214,8 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
 
   const authAdapter = createSupabaseAuthAdapter({
     supabase,
+    supabaseUrl,
+    supabasePublishableKey,
     defaultRedirectTo: defaultRedirectTo(),
     logoutRedirectTo: logoutRedirectTo(),
   });
@@ -242,7 +251,7 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
   function renderSlot(): void {
     const el = resolveSlot();
     if (!el) return;
-    el.innerHTML = renderAuthAction(authState, { profileHref });
+    el.innerHTML = renderAuthAction(authState, { profileHref, language });
 
     el.querySelector<HTMLElement>("#geoglowsSignIn")?.addEventListener(
       "click",
@@ -452,7 +461,7 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
       completeCallback: !callbackConsumed,
       // Carry the previous user/account through the transient
       // bootstrapping/loading phases on rebootstrap (tab-focus revalidation),
-      // avoiding the avatar → "Signing in…" flicker. null on first bootstrap
+      // avoiding the avatar → spinner flicker. null on first bootstrap
       // is the desired fresh-start default.
       initialState: authState.user
         ? {
@@ -471,6 +480,12 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
           callbackConsumed = true;
         }
         if (destroyed || connectGaveUp || token !== attemptToken) return;
+        // A failed attempt with no session is the loop's to judge: it either
+        // retries (the spinner stays up through the backoff) or gives up
+        // (`giveUp` renders the error icon). Rendering the error here would
+        // flash it between attempts. A failure *with* a session is a real,
+        // degraded state and renders as the avatar.
+        if (state.status === "error" && !state.user) return;
         // Preserve any locally-tracked action (e.g. "signing_out").
         authState = {
           user: state.user,
@@ -700,7 +715,7 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
   document.addEventListener("visibilitychange", onVisibilityChange);
 
   // Safety net: if INITIAL_SESSION never fires within 2s, bootstrap anyway so
-  // the slot never sticks on the "Signing in…" placeholder.
+  // the slot never sticks on the loading spinner.
   track(() => {
     if (!initialBootstrapDone) {
       initialBootstrapDone = true;
@@ -708,7 +723,8 @@ export function bootstrapAuth(config: BootstrapAuthConfig): AuthHandle {
     }
   }, 2000);
 
-  // Initial render so the slot shows the loading pill immediately.
+  // Initial render so the slot shows the spinner immediately — never a "Sign
+  // in" button before the service has said whether there is a session.
   renderSlot();
 
   return {
